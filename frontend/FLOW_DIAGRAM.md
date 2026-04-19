@@ -1,0 +1,413 @@
+# SAIP Authentication Flow Diagram
+
+## 🔄 Complete User Journey
+
+### Landing Page Flow
+```
+┌─────────────────┐
+│  Landing Page   │
+│       /         │
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    │         │
+    ▼         ▼
+┌───────┐  ┌────────┐
+│ Login │  │Register│
+│/login │  │/register│
+└───────┘  └────────┘
+```
+
+### Employee Registration & Login Flow
+```
+Employee Journey:
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  /login (Employee tab) → "Register here"                   │
+│                    ↓                                        │
+│         /employee-register                                  │
+│                    ↓                                        │
+│         Fill Form & Submit                                  │
+│                    ↓                                        │
+│    ✓ Validate Password (min 6 chars)                       │
+│    ✓ Check Passwords Match                                 │
+│    ✓ Verify Email Unique                                   │
+│    ✓ Check Department Selected                             │
+│                    ↓                                        │
+│         Save to localStorage                                │
+│                    ↓                                        │
+│    Toast: "Registration successful!"                        │
+│                    ↓                                        │
+│         Redirect to /login                                  │
+│                    ↓                                        │
+│    /login (Employee tab)                                   │
+│                    ↓                                        │
+│    Enter Email & Password                                   │
+│                    ↓                                        │
+│    ✓ Validate Credentials                                  │
+│                    ↓                                        │
+│         Redirect to /2fa                                    │
+│                    ↓                                        │
+│    Enter 6-digit OTP (any code works)                      │
+│                    ↓                                        │
+│    Toast: "Login successful!"                               │
+│                    ↓                                        │
+│         /employee (Employee Portal)                         │
+│                    ✓                                        │
+│              LOGGED IN                                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Admin Registration & Login Flow
+```
+Admin Journey:
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  /login (Admin tab) → "Register here"                      │
+│                    ↓                                        │
+│         /admin-register                                     │
+│                    ↓                                        │
+│    Enter Admin Code: SAIP-ADMIN-2026                       │
+│                    ↓                                        │
+│         Fill Form & Submit                                  │
+│                    ↓                                        │
+│    ✓ Validate Admin Code                                   │
+│    ✓ Validate Password (min 6 chars)                       │
+│    ✓ Check Passwords Match                                 │
+│    ✓ Verify Email Unique                                   │
+│    ✓ Check Department Selected                             │
+│                    ↓                                        │
+│         Save to localStorage                                │
+│                    ↓                                        │
+│    Toast: "Admin registration successful!"                  │
+│                    ↓                                        │
+│         Redirect to /login                                  │
+│                    ↓                                        │
+│    /login (Admin tab)                                      │
+│                    ↓                                        │
+│    Enter Email & Password                                   │
+│                    ↓                                        │
+│    ✓ Validate Credentials                                  │
+│                    ↓                                        │
+│         Redirect to /2fa                                    │
+│                    ↓                                        │
+│    Enter 6-digit OTP (any code works)                      │
+│                    ↓                                        │
+│    Toast: "Login successful!"                               │
+│                    ↓                                        │
+│         /admin (Admin Portal)                               │
+│                    ✓                                        │
+│              LOGGED IN                                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Citizen Registration & Login Flow
+```
+Citizen Journey:
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  /login (Public tab) → "Register here"                     │
+│                    ↓                                        │
+│         /register                                           │
+│                    ↓                                        │
+│         Fill Form & Provide Signature                       │
+│                    ↓                                        │
+│    ✓ Check Signature Provided                              │
+│    ✓ Validate Password (min 6 chars)                       │
+│    ✓ Check Passwords Match                                 │
+│    ✓ Verify Email Unique                                   │
+│                    ↓                                        │
+│         Save to localStorage                                │
+│                    ↓                                        │
+│    Toast: "Registration successful!"                        │
+│                    ↓                                        │
+│         /public (Citizen Portal)                            │
+│                    ✓                                        │
+│              LOGGED IN                                      │
+│            (No 2FA required)                                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 🎯 Role-Specific Features
+
+### Public (Citizen)
+```
+┌──────────────────┐
+│  Citizen Portal  │
+│     /public      │
+├──────────────────┤
+│ • Dashboard      │
+│ • File Complaint │
+│ • My Complaints  │
+│ • Transparency   │
+│ • AI Chatbot     │
+│ • Notifications  │
+│ • Profile        │
+└──────────────────┘
+```
+
+### Employee
+```
+┌──────────────────────┐
+│   Employee Portal    │
+│      /employee       │
+├──────────────────────┤
+│ • Dashboard          │
+│ • Assigned Complaints│
+│ • Map View           │
+│ • Upload Evidence    │
+│ • Performance        │
+│ • Notifications      │
+└──────────────────────┘
+```
+
+### Admin
+```
+┌──────────────────────┐
+│    Admin Portal      │
+│       /admin         │
+├──────────────────────┤
+│ • Dashboard          │
+│ • Departments        │
+│ • Fraud Detection    │
+│ • City Health Index  │
+│ • Sustainability     │
+│ • User Management    │
+│ • Reports            │
+└──────────────────────┘
+```
+
+## 🔐 Authentication Decision Tree
+
+```
+                    ┌─────────────┐
+                    │  User Type  │
+                    └──────┬──────┘
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+          ▼                ▼                ▼
+    ┌─────────┐      ┌──────────┐    ┌────────┐
+    │ Citizen │      │ Employee │    │ Admin  │
+    └────┬────┘      └─────┬────┘    └────┬───┘
+         │                 │              │
+         ▼                 ▼              ▼
+    ┌─────────┐      ┌──────────┐    ┌────────┐
+    │Register │      │Register  │    │Register│
+    │/register│      │/employee-│    │/admin- │
+    │         │      │register  │    │register│
+    └────┬────┘      └─────┬────┘    └────┬───┘
+         │                 │              │
+         │                 │              │
+         │           Admin Code?          │
+         │                 ▼              │
+         │           ┌──────────┐         │
+         │           │SAIP-ADMIN│         │
+         │           │  -2026   │         │
+         │           └──────────┘         │
+         │                 │              │
+         ▼                 ▼              ▼
+    ┌─────────┐      ┌──────────┐    ┌────────┐
+    │  Login  │      │  Login   │    │ Login  │
+    └────┬────┘      └─────┬────┘    └────┬───┘
+         │                 │              │
+         │                 ▼              ▼
+         │           ┌──────────┐    ┌────────┐
+         │           │  2FA     │    │  2FA   │
+         │           │  /2fa    │    │  /2fa  │
+         │           └─────┬────┘    └────┬───┘
+         │                 │              │
+         ▼                 ▼              ▼
+    ┌─────────┐      ┌──────────┐    ┌────────┐
+    │ Public  │      │ Employee │    │ Admin  │
+    │ Portal  │      │  Portal  │    │ Portal │
+    └─────────┘      └──────────┘    └────────┘
+```
+
+## 📊 Data Storage Structure
+
+```
+localStorage
+├── saip_users
+│   └── [
+│       {
+│         id: "CIT-1234567890-123",
+│         email: "citizen@example.com",
+│         password: "******",
+│         role: "public",
+│         fullName: "John Citizen"
+│       },
+│       {
+│         id: "EMP-1234567891-456",
+│         email: "emp@gov.in",
+│         password: "******",
+│         role: "employee",
+│         fullName: "Jane Employee",
+│         employeeId: "EMP001",
+│         department: "Sanitation"
+│       },
+│       {
+│         id: "ADMIN-1234567892-789",
+│         email: "admin@saip.gov.in",
+│         password: "admin123",
+│         role: "admin",
+│         fullName: "System Administrator",
+│         adminId: "ADMIN001"
+│       }
+│     ]
+│
+├── saip_current_user
+│   └── { user object of logged-in user }
+│
+└── saip_pending_role
+    └── "employee" | "admin" (during 2FA)
+```
+
+## 🔄 State Transitions
+
+```
+Application States:
+
+[Not Authenticated]
+       ↓
+   Register
+       ↓
+[Pending Login]
+       ↓
+   Login (validate)
+       ↓
+       ├─→ Citizen? → [Authenticated - Citizen]
+       │
+       └─→ Employee/Admin?
+              ↓
+           [Pending 2FA]
+              ↓
+           Enter OTP
+              ↓
+           [Authenticated - Employee/Admin]
+```
+
+## 🎨 UI Flow Map
+
+```
+                    ┌──────────────┐
+                    │   Landing    │
+                    │      /       │
+                    └──────┬───────┘
+                           │
+                    ┌──────┴───────┐
+                    │     Login    │
+                    │    /login    │
+                    │              │
+                    │  ┌─────────┐ │
+                    │  │ Public  │ │
+                    │  │Employee │ │
+                    │  │  Admin  │ │
+                    │  └─────────┘ │
+                    └──────┬───────┘
+                           │
+       ┌───────────────────┼───────────────────┐
+       │                   │                   │
+       ▼                   ▼                   ▼
+┌─────────────┐    ┌──────────────┐   ┌─────────────┐
+│  /register  │    │/employee-    │   │/admin-      │
+│             │    │  register    │   │  register   │
+│ Citizen     │    │              │   │             │
+│ Form +      │    │ Employee     │   │ Admin Code  │
+│ Signature   │    │ Form         │   │ + Form      │
+└─────┬───────┘    └──────┬───────┘   └──────┬──────┘
+      │                   │                   │
+      │             Success Toast       Success Toast
+      │                   │                   │
+      │                   ▼                   │
+      │            ┌──────────┐               │
+      │            │  /login  │◄──────────────┘
+      │            └────┬─────┘
+      │                 │
+      │           Validate Login
+      │                 │
+      │     ┌───────────┼───────────┐
+      │     │           │           │
+      ▼     ▼           ▼           ▼
+┌─────────┐ ┌─────────────────┐ ┌─────────┐
+│ /public │ │      /2fa       │ │  /2fa   │
+│         │ │                 │ │         │
+│ Citizen │ │ Enter OTP       │ │Enter OTP│
+│ Portal  │ │                 │ │         │
+└─────────┘ └────┬─────┬──────┘ └────┬────┘
+                 │     │             │
+                 ▼     ▼             ▼
+           ┌──────────┐        ┌─────────┐
+           │/employee │        │ /admin  │
+           │          │        │         │
+           │Employee  │        │ Admin   │
+           │Portal    │        │ Portal  │
+           └──────────┘        └─────────┘
+```
+
+## ✅ Validation Flow
+
+```
+Registration Form Submission
+         │
+         ▼
+┌────────────────────┐
+│ Client Validation  │
+├────────────────────┤
+│ 1. All fields?     │─── No ──→ Show error
+│ 2. Email format?   │─── No ──→ Show error
+│ 3. Password ≥ 6?   │─── No ──→ Show error
+│ 4. Passwords match?│─── No ──→ Show error
+│ 5. Department?     │─── No ──→ Show error
+│ 6. Admin code?     │─── No ──→ Show error (admin only)
+│    (admin only)    │
+└────────┬───────────┘
+         │ All Yes
+         ▼
+┌────────────────────┐
+│ Email Unique?      │
+└────────┬───────────┘
+         │
+    ┌────┴────┐
+    │         │
+   Yes       No
+    │         │
+    │         └──→ "Email already exists"
+    ▼
+┌────────────────────┐
+│ Save to Storage    │
+└────────┬───────────┘
+         │
+         ▼
+┌────────────────────┐
+│ Success Toast      │
+└────────┬───────────┘
+         │
+         ▼
+┌────────────────────┐
+│ Redirect to Login  │
+└────────────────────┘
+```
+
+---
+
+## 📍 Quick Reference
+
+### URLs
+- Landing: `/`
+- Login: `/login`
+- Citizen Register: `/register`
+- Employee Register: `/employee-register`
+- Admin Register: `/admin-register`
+- 2FA: `/2fa`
+- Citizen Portal: `/public/*`
+- Employee Portal: `/employee/*`
+- Admin Portal: `/admin/*`
+
+### Default Credentials
+- **Email:** admin@saip.gov.in
+- **Password:** admin123
+- **OTP:** Any 6 digits
+
+### Registration Code
+- **Admin Code:** SAIP-ADMIN-2026

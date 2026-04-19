@@ -1,0 +1,19 @@
+{
+  "name": "smart-ai-civic-intelligence-platform",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "npm@10.9.3",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0"
+  }
+}
