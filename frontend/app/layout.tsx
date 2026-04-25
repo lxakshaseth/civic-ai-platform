@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
-import "@/src/styles/index.css";
+
+// ✅ Correct global CSS import
+import "../src/styles/index.css";
 
 export const metadata: Metadata = {
   title: "SAIP",
@@ -9,12 +11,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className="min-h-screen bg-background antialiased">
+        {children}
+      </body>
     </html>
   );
 }
