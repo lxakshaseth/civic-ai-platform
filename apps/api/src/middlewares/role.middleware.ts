@@ -4,6 +4,7 @@ import { StatusCodes } from "http-status-codes";
 
 import { queueAuditLogJob } from "queues/jobs/audit.job";
 import { AppError } from "shared/errors/app-error";
+import { logger } from "utils/logger";
 
 export const authorize =
   (...allowedRoles: UserRole[]) =>
@@ -14,8 +15,10 @@ export const authorize =
 
     if (!allowedRoles.includes(req.user.role)) {
       if (process.env.NODE_ENV !== "production") {
-        console.log("User:", req.user);
-        console.log("Allowed roles:", allowedRoles);
+        logger.debug(
+          { userId: req.user.id, userRole: req.user.role, allowedRoles },
+          "Authorization denied"
+        );
       }
 
       void queueAuditLogJob({

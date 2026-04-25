@@ -57,6 +57,7 @@ let refreshInFlight: Promise<string | null> | null = null;
 
 function getApiBaseUrl() {
   return (
+    process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "") ||
     process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, "") ||
     DEFAULT_API_BASE_URL
   );

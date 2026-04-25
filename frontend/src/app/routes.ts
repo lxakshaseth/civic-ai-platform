@@ -48,6 +48,7 @@ import CommandCenter from "./pages/admin/CommandCenter";
 import AuditCompliance from "./pages/admin/AuditCompliance";
 import BroadcastCenter from "./pages/admin/BroadcastCenter";
 import ComplaintOperations from "./pages/admin/ComplaintOperations";
+import SanitaryReimbursementPage from "./pages/admin/SanitaryReimbursementPage";
 
 export const router = createBrowserRouter([
   {
@@ -133,6 +134,7 @@ export const router = createBrowserRouter([
       { path: "fraud", Component: FraudDetection },
       { path: "city-health", Component: CityHealthIndex },
       { path: "sustainability", Component: SustainabilityIndex },
+      { path: "sanitary-reimbursement", Component: SanitaryReimbursementPage },
       { path: "users", Component: UserManagement },
       { path: "reports", Component: Reports },
     ],

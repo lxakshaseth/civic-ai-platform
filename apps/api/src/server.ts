@@ -5,6 +5,7 @@ import {
   civicPlatformPool,
   ensureCivicPlatformSchema
 } from "database/clients/civic-platform";
+import { connectRedis } from "database/clients/redis";
 import { closeBullMqConnection } from "queues/connection";
 import { closeQueues } from "queues/queue.registry";
 import { startQueueWorkers, stopQueueWorkers } from "queues/workers";
@@ -13,6 +14,8 @@ import { createApp } from "app";
 import { logger } from "utils/logger";
 
 const bootstrap = async () => {
+  const shouldStartQueues = !env.DISABLE_QUEUES && Boolean(await connectRedis());
+
   if (civicPlatformPool) {
     await civicPlatformPool.query("SELECT 1");
     await ensureCivicPlatformSchema();
@@ -24,8 +27,10 @@ const bootstrap = async () => {
 
   initSocketServer(httpServer);
 
-  if (!env.DISABLE_QUEUES) {
+  if (shouldStartQueues) {
     startQueueWorkers();
+  } else if (!env.DISABLE_QUEUES) {
+    logger.warn("Redis is unavailable. Queue workers will stay disabled for this process.");
   }
 
   httpServer.listen(env.PORT, () => {
@@ -35,7 +40,7 @@ const bootstrap = async () => {
   const shutdown = async () => {
     logger.info("Graceful shutdown started");
 
-    if (!env.DISABLE_QUEUES) {
+    if (shouldStartQueues) {
       await stopQueueWorkers();
       await closeQueues();
       await closeBullMqConnection();
@@ -56,7 +61,7 @@ const bootstrap = async () => {
 };
 
 bootstrap().catch(async (error) => {
-  logger.error({ error, databaseUrl: env.DATABASE_URL }, "Failed to start API server");
+  logger.error({ error }, "Failed to start API server");
 
   if (civicPlatformPool) {
     await civicPlatformPool.end().catch(() => undefined);

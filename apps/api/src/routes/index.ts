@@ -20,6 +20,7 @@ import { notificationsRoutes } from "modules/notification/notification.route";
 import { ProfileController } from "modules/profile/profile.controller";
 import { profileEditableSchema } from "modules/profile/profile.validator";
 import { profileRoutes } from "modules/profile/profile.route";
+import { sanitaryRoutes } from "modules/sanitary/sanitary.route";
 import { ticketsRoutes } from "modules/ticket/ticket.route";
 import { usersRoutes } from "modules/user/user.route";
 import { verificationRoutes } from "modules/verification/verification.route";
@@ -37,6 +38,7 @@ router.use("/auth", authRoutes);
 router.use("/ai-content", aiContentRoutes);
 router.use("/save-content", saveContentRoutes);
 router.use("/profile", profileRoutes);
+router.use("/sanitary", sanitaryRoutes);
 router.put(
   "/user/update-profile",
   authenticate,

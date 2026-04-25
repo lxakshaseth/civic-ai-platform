@@ -7,6 +7,7 @@ import { ProfileRepository } from "modules/profile/profile.repository";
 import { queueNotificationJob } from "queues/jobs/notification.job";
 import { AppError } from "shared/errors/app-error";
 import { emitToChatRoom, emitToUserRoom } from "sockets/socket.server";
+import { logger } from "utils/logger";
 import { toPublicUploadPath } from "utils/uploads";
 
 import {
@@ -141,12 +142,15 @@ export class ComplaintChatService {
 
     const presentedMessage = presentChatMessage(createdMessage);
 
-    console.log("MESSAGE SENT:", {
-      complaintId: complaint.id,
-      messageId: presentedMessage.id,
-      senderId: actor.id,
-      receiverId: receiver.id
-    });
+    logger.debug(
+      {
+        complaintId: complaint.id,
+        messageId: presentedMessage.id,
+        senderId: actor.id,
+        receiverId: receiver.id
+      },
+      "Complaint chat message sent"
+    );
 
     emitToChatRoom(complaint.id, SOCKET_EVENTS.chatMessageCreated, presentedMessage);
     emitToUserRoom(actor.id, SOCKET_EVENTS.chatMessageCreated, presentedMessage);

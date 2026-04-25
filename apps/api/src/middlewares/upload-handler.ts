@@ -112,5 +112,6 @@ const chatAudioFilterConfig: UploadFilterConfig = {
 
 export const complaintUpload = buildUpload(uploadConfig.complaintsDir, defaultUploadFilterConfig);
 export const evidenceUpload = buildUpload(uploadConfig.evidenceDir, defaultUploadFilterConfig);
+export const sanitaryUpload = buildUpload(uploadConfig.sanitaryDir, defaultUploadFilterConfig);
 export const verificationUpload = buildUpload(uploadConfig.tempDir, defaultUploadFilterConfig);
 export const chatAudioUpload = buildUpload(uploadConfig.chatDir, chatAudioFilterConfig);

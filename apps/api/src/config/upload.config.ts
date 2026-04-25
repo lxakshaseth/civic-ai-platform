@@ -6,10 +6,11 @@ import { env } from "config/env";
 const uploadsRoot = path.resolve(process.cwd(), "uploads");
 const complaintsDir = path.join(uploadsRoot, "complaints");
 const evidenceDir = path.join(uploadsRoot, "evidence");
+const sanitaryDir = path.join(uploadsRoot, "sanitary");
 const chatDir = path.join(uploadsRoot, "chat");
 const tempDir = path.resolve(process.cwd(), env.UPLOAD_TEMP_DIR);
 
-[uploadsRoot, complaintsDir, evidenceDir, chatDir, tempDir].forEach((dir) => {
+[uploadsRoot, complaintsDir, evidenceDir, sanitaryDir, chatDir, tempDir].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -19,6 +20,7 @@ export const uploadConfig = {
   uploadsRoot,
   complaintsDir,
   evidenceDir,
+  sanitaryDir,
   chatDir,
   tempDir,
   maxFileSize: env.MAX_FILE_SIZE_MB * 1024 * 1024,
