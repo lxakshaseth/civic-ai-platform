@@ -1,8 +1,16 @@
 const Redis = require('ioredis')
 const { getEnv, parseBoolean } = require('./env')
 
-const redisUrl = getEnv('REDIS_URL', { required: true })
+// 🔥 FORCE REDIS_URL
+const redisUrl = process.env.REDIS_URL
 
+if (!redisUrl) {
+  throw new Error('❌ REDIS_URL is missing in environment variables')
+}
+
+console.log('🔍 REDIS URL:', redisUrl ? 'FOUND ✅' : 'MISSING ❌')
+
+// 🔥 OPTIONS
 const redisOptions = {
   lazyConnect: true,
   enableReadyCheck: true,
@@ -12,20 +20,21 @@ const redisOptions = {
   },
 }
 
+// 🔥 REQUIRED for Upstash (TLS)
 if (redisUrl.startsWith('rediss://')) {
   redisOptions.tls = {
-    rejectUnauthorized: parseBoolean(process.env.REDIS_TLS_REJECT_UNAUTHORIZED, false),
+    rejectUnauthorized: false, // 🔥 important
   }
 }
 
+// 🔥 CREATE CLIENT
 const redis = new Redis(redisUrl, redisOptions)
 
+// 🔥 CONNECTION HANDLER
 let connectPromise = null
 
 async function ensureRedisConnection() {
-  if (redis.status === 'ready' || redis.status === 'connect') {
-    return redis
-  }
+  if (redis.status === 'ready') return redis
 
   if (!connectPromise) {
     connectPromise = redis.connect().finally(() => {
@@ -37,11 +46,8 @@ async function ensureRedisConnection() {
   return redis
 }
 
+// 🔥 CLOSE
 async function closeRedis() {
-  if (redis.status === 'end') {
-    return
-  }
-
   try {
     await redis.quit()
   } catch (error) {
@@ -49,16 +55,18 @@ async function closeRedis() {
   }
 }
 
+/* ---------------- EVENTS ---------------- */
+
 redis.on('connect', () => {
-  console.log('Redis connection established')
+  console.log('✅ Redis connected')
 })
 
 redis.on('ready', () => {
-  console.log('Redis client ready')
+  console.log('🎯 Redis ready')
 })
 
 redis.on('error', (error) => {
-  console.error('Redis connection error:', error.message)
+  console.error('❌ Redis error:', error.message)
 })
 
 module.exports = {

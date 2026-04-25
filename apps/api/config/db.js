@@ -1,104 +1,70 @@
+require('dotenv').config()
+
 const { Pool } = require('pg')
-const { parseBoolean, parseNumber } = require('./env')
 
-const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
-
-function shouldUseSsl(hostname) {
-  if (!hostname) {
-    return false
+/* ---------------- VALIDATION ---------------- */
+function validateDatabaseUrl(url) {
+  if (!url) {
+    throw new Error('❌ DATABASE_URL is missing')
   }
 
-  return !LOCAL_DATABASE_HOSTS.has(hostname.toLowerCase())
-}
-
-function resolveSslConfig(connectionString, host) {
-  const dbSsl = process.env.DB_SSL
-  const sslMode = process.env.PGSSLMODE
-
-  if (typeof dbSsl === 'string') {
-    return parseBoolean(dbSsl, true)
-      ? { rejectUnauthorized: parseBoolean(process.env.DB_SSL_REJECT_UNAUTHORIZED, false) }
-      : false
+  if (!url.startsWith('postgresql://')) {
+    throw new Error('❌ DATABASE_URL must start with "postgresql://"')
   }
 
-  if (typeof sslMode === 'string' && sslMode.trim().toLowerCase() === 'disable') {
-    return false
-  }
+  try {
+    const parsed = new URL(url)
 
-  if (connectionString) {
-    try {
-      const url = new URL(connectionString)
-      const sslModeFromUrl = url.searchParams.get('sslmode')
+    console.log('🔍 DB HOST:', parsed.hostname)
 
-      if (typeof sslModeFromUrl === 'string' && sslModeFromUrl.toLowerCase() === 'disable') {
-        return false
-      }
-
-      if (shouldUseSsl(url.hostname)) {
-        return { rejectUnauthorized: parseBoolean(process.env.DB_SSL_REJECT_UNAUTHORIZED, false) }
-      }
-    } catch (error) {
-      console.warn('Unable to parse DATABASE_URL for SSL detection. Falling back to non-SSL.', error.message)
-      return false
+    if (!parsed.hostname.includes('supabase.co')) {
+      console.warn('⚠️ Warning: Not a Supabase database')
     }
-  }
 
-  if (shouldUseSsl(host)) {
-    return { rejectUnauthorized: parseBoolean(process.env.DB_SSL_REJECT_UNAUTHORIZED, false) }
+    return parsed
+  } catch (err) {
+    throw new Error('❌ Invalid DATABASE_URL format')
   }
-
-  return false
 }
 
+/* ---------------- CONFIG ---------------- */
 function createPoolConfig() {
   const connectionString = process.env.DATABASE_URL
 
-  if (connectionString) {
-    return {
-      connectionString,
-      max: parseNumber(process.env.DB_POOL_MAX, 10),
-      idleTimeoutMillis: parseNumber(process.env.DB_IDLE_TIMEOUT_MS, 30000),
-      connectionTimeoutMillis: parseNumber(process.env.DB_CONNECTION_TIMEOUT_MS, 10000),
-      ssl: resolveSslConfig(connectionString),
-    }
+  const parsed = validateDatabaseUrl(connectionString)
+
+  return {
+    connectionString,
+
+    // 🔥 REQUIRED for Supabase (fixes ECONNREFUSED / SSL issues)
+    ssl: {
+      rejectUnauthorized: false,
+    },
+
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
   }
-
-  const host = process.env.DB_HOST || process.env.CIVIC_PLATFORM_DB_HOST
-  const user = process.env.DB_USER || process.env.CIVIC_PLATFORM_DB_USER
-  const password = process.env.DB_PASSWORD || process.env.CIVIC_PLATFORM_DB_PASSWORD
-  const database = process.env.DB_NAME || process.env.CIVIC_PLATFORM_DB_NAME
-  const port = parseNumber(process.env.DB_PORT || process.env.CIVIC_PLATFORM_DB_PORT, 5432)
-
-  if (host && user && password && database) {
-    return {
-      host,
-      user,
-      password,
-      database,
-      port,
-      max: parseNumber(process.env.DB_POOL_MAX, 10),
-      idleTimeoutMillis: parseNumber(process.env.DB_IDLE_TIMEOUT_MS, 30000),
-      connectionTimeoutMillis: parseNumber(process.env.DB_CONNECTION_TIMEOUT_MS, 10000),
-      ssl: resolveSslConfig(null, host),
-    }
-  }
-
-  throw new Error(
-    'Database configuration is missing. Set DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME.'
-  )
 }
 
+/* ---------------- POOL ---------------- */
 const pool = new Pool(createPoolConfig())
 
-pool.on('error', (error) => {
-  console.error('Unexpected PostgreSQL pool error:', error.message)
+/* ---------------- EVENTS ---------------- */
+pool.on('connect', () => {
+  console.log('✅ PostgreSQL connected')
 })
 
+pool.on('error', (error) => {
+  console.error('❌ PostgreSQL pool error:', error.message)
+})
+
+/* ---------------- QUERY ---------------- */
 async function query(text, params = []) {
   try {
     return await pool.query(text, params)
   } catch (error) {
-    console.error('Database query failed:', {
+    console.error('❌ Query failed:', {
       message: error.message,
       query: text,
     })
@@ -106,6 +72,7 @@ async function query(text, params = []) {
   }
 }
 
+/* ---------------- TRANSACTION ---------------- */
 async function withTransaction(callback) {
   const client = await pool.connect()
 
@@ -115,25 +82,37 @@ async function withTransaction(callback) {
     await client.query('COMMIT')
     return result
   } catch (error) {
-    try {
-      await client.query('ROLLBACK')
-    } catch (rollbackError) {
-      console.error('Database rollback failed:', rollbackError.message)
-    }
-
+    await client.query('ROLLBACK')
+    console.error('❌ Transaction failed:', error.message)
     throw error
   } finally {
     client.release()
   }
 }
 
+/* ---------------- HEALTH CHECK ---------------- */
+async function checkDbConnection() {
+  try {
+    await pool.query('SELECT 1')
+    console.log('🎯 DB connection verified')
+    return true
+  } catch (error) {
+    console.error('❌ DB connection failed:', error.message)
+    return false
+  }
+}
+
+/* ---------------- CLOSE ---------------- */
 async function closePool() {
+  console.log('🛑 Closing DB pool...')
   await pool.end()
 }
 
+/* ---------------- EXPORTS ---------------- */
 module.exports = {
   pool,
   query,
   withTransaction,
   closePool,
+  checkDbConnection,
 }

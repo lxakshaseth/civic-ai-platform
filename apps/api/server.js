@@ -1,3 +1,5 @@
+require('dotenv').config()
+
 const cors = require('cors')
 const express = require('express')
 const helmet = require('helmet')
@@ -10,6 +12,14 @@ const { logger, requestLogger } = require('./middlewares/requestLogger')
 const complaintRoutes = require('./routes/complaintRoutes')
 const userRoutes = require('./routes/userRoutes')
 
+/* ---------------- DEBUG ENV ---------------- */
+console.log("🌍 ENV DEBUG START")
+console.log("DATABASE_URL:", process.env.DATABASE_URL ? "FOUND ✅" : "MISSING ❌")
+console.log("REDIS_URL:", process.env.REDIS_URL ? "FOUND ✅" : "MISSING ❌")
+console.log("NODE_ENV:", process.env.NODE_ENV)
+console.log("🌍 ENV DEBUG END")
+
+/* ---------------- CORS ---------------- */
 function buildCorsOptions() {
   const allowedOrigins = parseOrigins(process.env.CORS_ORIGIN)
 
@@ -20,63 +30,55 @@ function buildCorsOptions() {
   return {
     origin(origin, callback) {
       if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true)
-        return
+        return callback(null, true)
       }
-
-      const error = new Error('Origin not allowed by CORS')
-      error.statusCode = 403
-      callback(error)
+      return callback(new Error('Origin not allowed by CORS'))
     },
     credentials: true,
   }
 }
 
+/* ---------------- API PREFIX ---------------- */
 function getApiPrefix() {
   const prefix = (process.env.API_PREFIX || '/api').trim()
-
-  if (!prefix.startsWith('/')) {
-    return `/${prefix}`
-  }
-
-  return prefix === '/' ? '/api' : prefix
+  return prefix.startsWith('/') ? prefix : `/${prefix}`
 }
 
+/* ---------------- HEALTH ---------------- */
 async function checkDatabaseHealth() {
+  console.log("🔍 Checking DB connection...")
   await query('SELECT 1')
+  console.log("✅ DB QUERY SUCCESS")
   return 'connected'
 }
 
 async function checkRedisHealth() {
+  console.log("🔍 Checking Redis...")
   await ensureRedisConnection()
+
   await redis.set('health', 'ok', 'EX', 10)
-  const redisValue = await redis.get('health')
+  const value = await redis.get('health')
 
-  if (redisValue !== 'ok') {
-    throw new Error('Redis health probe failed.')
-  }
+  if (value !== 'ok') throw new Error('Redis failed')
 
+  console.log("✅ Redis OK")
   return 'connected'
 }
 
 async function getHealthSnapshot() {
-  const services = {
-    database: 'error',
-    redis: 'error',
-  }
-
+  const services = { database: 'error', redis: 'error' }
   const failures = []
 
   try {
     services.database = await checkDatabaseHealth()
-  } catch (error) {
-    failures.push(`database: ${error.message}`)
+  } catch (e) {
+    failures.push(`database: ${e.message}`)
   }
 
   try {
     services.redis = await checkRedisHealth()
-  } catch (error) {
-    failures.push(`redis: ${error.message}`)
+  } catch (e) {
+    failures.push(`redis: ${e.message}`)
   }
 
   return {
@@ -86,39 +88,39 @@ async function getHealthSnapshot() {
   }
 }
 
+/* ---------------- APP ---------------- */
 function createApp() {
   const app = express()
   const apiPrefix = getApiPrefix()
 
   app.set('trust proxy', 1)
+
   app.use(requestLogger)
   app.use(helmet())
   app.use(cors(buildCorsOptions()))
   app.use(express.json({ limit: '2mb' }))
   app.use(express.urlencoded({ extended: true }))
 
+  // ✅ Root route
   app.get('/', (req, res) => {
-    res.status(200).json({
+    res.json({
       success: true,
-      message: 'Backend is running.',
+      message: '🚀 Civic AI Backend Running',
     })
   })
 
-  app.get(['/health', `${apiPrefix}/health`], async (req, res, next) => {
-    try {
-      const health = await getHealthSnapshot()
+  // ✅ Health route
+  app.get(['/health', `${apiPrefix}/health`], async (req, res) => {
+    const health = await getHealthSnapshot()
 
-      res.status(health.ok ? 200 : 503).json({
-        success: health.ok,
-        message: health.ok ? 'Service is healthy.' : 'Service is unhealthy.',
-        services: health.services,
-        ...(health.failures.length ? { failures: health.failures } : {}),
-      })
-    } catch (error) {
-      next(error)
-    }
+    res.status(health.ok ? 200 : 503).json({
+      success: health.ok,
+      services: health.services,
+      ...(health.failures.length && { failures: health.failures }),
+    })
   })
 
+  // ✅ Routes
   app.use(`${apiPrefix}/users`, userRoutes)
   app.use(`${apiPrefix}/complaints`, complaintRoutes)
 
@@ -128,52 +130,55 @@ function createApp() {
   return app
 }
 
+/* ---------------- START SERVER ---------------- */
 async function startServer() {
   try {
+    console.log("🚀 Starting server...")
+
     validateServerEnv()
 
     const port = Number(process.env.PORT || 5000)
     const app = createApp()
 
     const server = app.listen(port, () => {
-      logger.info({ port, apiPrefix: getApiPrefix() }, 'API server started')
+      console.log(`✅ Server running on port ${port}`)
     })
 
-    server.on('error', (error) => {
-      logger.error({ error }, 'HTTP server failed to start')
-      process.exit(1)
-    })
+    // 🔥 DB CHECK (IMPORTANT DEBUG)
+    checkDatabaseHealth()
+      .then(() => console.log('🎯 DB CONNECTED SUCCESSFULLY'))
+      .catch((e) => {
+        console.error("❌ DB CONNECTION FAILED")
+        console.error("REASON:", e.message)
+      })
 
-    void checkDatabaseHealth()
-      .then(() => logger.info('PostgreSQL connection verified'))
-      .catch((error) => logger.warn({ error: error.message }, 'PostgreSQL health check failed during startup'))
+    // 🔥 Redis check
+    checkRedisHealth()
+      .then(() => console.log('🎯 REDIS CONNECTED'))
+      .catch((e) => console.warn('⚠️ Redis error:', e.message))
 
-    void checkRedisHealth()
-      .then(() => logger.info('Redis connection verified'))
-      .catch((error) => logger.warn({ error: error.message }, 'Redis health check failed during startup'))
-
+    // 🔥 Shutdown
     async function shutdown(signal) {
-      logger.info({ signal }, 'Received shutdown signal')
+      console.log(`🛑 Shutting down: ${signal}`)
 
       server.close(async () => {
         try {
           await closePool()
           await closeRedis()
-          logger.info('PostgreSQL and Redis connections closed')
+          console.log('✅ Resources closed')
           process.exit(0)
-        } catch (error) {
-          logger.error({ error }, 'Error during shutdown')
+        } catch (err) {
+          console.error('❌ Shutdown error:', err)
           process.exit(1)
         }
       })
     }
 
-    process.on('SIGINT', () => shutdown('SIGINT'))
-    process.on('SIGTERM', () => shutdown('SIGTERM'))
+    process.on('SIGINT', shutdown)
+    process.on('SIGTERM', shutdown)
 
-    return { app, server }
   } catch (error) {
-    logger.error({ error }, 'Failed to start server')
+    console.error('🔥 SERVER START FAILED:', error)
     process.exit(1)
   }
 }
