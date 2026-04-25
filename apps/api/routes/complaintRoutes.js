@@ -5,6 +5,6 @@ const { asyncHandler } = require('../utils/asyncHandler')
 
 const router = express.Router()
 
-router.post('/complaint', asyncHandler(createComplaint))
+router.post('/', asyncHandler(createComplaint))
 
 module.exports = router
