@@ -238,6 +238,41 @@ const bootstrapDoStatements = [
   `
     CREATE INDEX IF NOT EXISTS ratings_complaint_id_idx
     ON public.ratings (complaint_id, created_at DESC);
+  `,
+  `
+    CREATE TABLE IF NOT EXISTS public.sanitary_reimbursement_requests (
+      id TEXT PRIMARY KEY,
+      citizen_id UUID,
+      citizen_name TEXT,
+      upi_id TEXT,
+      amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      transaction_id TEXT,
+      invoice_number TEXT,
+      vendor_name TEXT,
+      bill_file_path TEXT,
+      review_note TEXT,
+      fraud_reason TEXT,
+      applied_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      approved_at TIMESTAMP WITHOUT TIME ZONE,
+      paid_at TIMESTAMP WITHOUT TIME ZONE,
+      rejected_at TIMESTAMP WITHOUT TIME ZONE,
+      flagged_at TIMESTAMP WITHOUT TIME ZONE,
+      created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `,
+  `
+    CREATE INDEX IF NOT EXISTS sanitary_reimbursement_status_idx
+    ON public.sanitary_reimbursement_requests (status, applied_at DESC);
+  `,
+  `
+    CREATE INDEX IF NOT EXISTS sanitary_reimbursement_citizen_idx
+    ON public.sanitary_reimbursement_requests (citizen_id, applied_at DESC);
+  `,
+  `
+    CREATE INDEX IF NOT EXISTS sanitary_reimbursement_upi_idx
+    ON public.sanitary_reimbursement_requests (upi_id, applied_at DESC);
   `
 ];
 
@@ -290,5 +325,16 @@ export async function ensureCivicPlatformSchema() {
       title = COALESCE(NULLIF(BTRIM(title), ''), 'Platform update'),
       is_read = COALESCE(is_read, false),
       created_at = COALESCE(created_at, CURRENT_TIMESTAMP)
+  `);
+
+  await civicPlatformPool.query(`
+    UPDATE public.sanitary_reimbursement_requests
+    SET
+      citizen_name = COALESCE(NULLIF(BTRIM(citizen_name), ''), 'Citizen'),
+      status = LOWER(COALESCE(NULLIF(BTRIM(status), ''), 'pending')),
+      amount = COALESCE(amount, 0),
+      applied_at = COALESCE(applied_at, created_at, CURRENT_TIMESTAMP),
+      created_at = COALESCE(created_at, CURRENT_TIMESTAMP),
+      updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)
   `);
 }

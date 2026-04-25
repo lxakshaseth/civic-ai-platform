@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, useState } from "react";
 import { AlertCircle, ArrowRight, CheckCircle, Clock, FileText, Heart, MapPin, Upload } from "lucide-react";
+import { ApiError, apiRequest } from "@/src/lib/api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
@@ -22,7 +23,9 @@ export default function SanitaryPads() {
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [purchaseAmount, setPurchaseAmount] = useState("");
   const [beneficiaryId, setBeneficiaryId] = useState("");
+  const [billFile, setBillFile] = useState<File | null>(null);
   const [billFileName, setBillFileName] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [claimState, setClaimState] = useState<ClaimState>(null);
 
   const normalizedPincode = normalizePincode(pincode);
@@ -39,10 +42,11 @@ export default function SanitaryPads() {
 
   const handleBillUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    setBillFile(file ?? null);
     setBillFileName(file?.name ?? "");
   };
 
-  const handleClaimSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleClaimSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (normalizedPincode.length !== 6) {
@@ -55,8 +59,8 @@ export default function SanitaryPads() {
       return;
     }
 
-    if (!invoiceNumber.trim() || !purchaseAmount || !billFileName) {
-      setClaimState({ type: "error", message: "Invoice number, amount, and GST bill upload are required for reimbursement." });
+    if (!invoiceNumber.trim() || !purchaseAmount || !beneficiaryId.trim() || !billFile) {
+      setClaimState({ type: "error", message: "Invoice number, purchase amount, buyer UPI, and GST bill upload are required for reimbursement." });
       return;
     }
 
@@ -65,12 +69,49 @@ export default function SanitaryPads() {
       return;
     }
 
-    setClaimState({
-      type: "success",
-      message: `GST bill received for ${selectedStore.name}. Up to Rs ${estimatedTransfer.toFixed(
-        0,
-      )} will be transferred to ${beneficiaryId || "the registered buyer account"} after verification.`,
-    });
+    try {
+      setIsSubmitting(true);
+      setClaimState(null);
+
+      const formData = new FormData();
+      formData.append("pincode", normalizedPincode);
+      formData.append("storeId", selectedStore.id);
+      formData.append("storeName", selectedStore.name);
+      formData.append("invoiceNumber", invoiceNumber.trim());
+      formData.append("purchaseAmount", purchaseAmount);
+      formData.append("reimbursementLimit", String(selectedStore.reimbursementLimit));
+      formData.append("upiId", beneficiaryId.trim());
+      formData.append("billFile", billFile);
+
+      const response = await apiRequest<{
+        id: string;
+        status: "pending" | "flagged";
+        message?: string;
+      }>("/sanitary/requests", {
+        method: "POST",
+        body: formData,
+      });
+
+      setClaimState({
+        type: "success",
+        message:
+          response.status === "flagged"
+            ? `GST bill submitted for ${selectedStore.name}. Request ${response.id} is flagged for manual verification before payout.`
+            : `GST bill received for ${selectedStore.name}. Request ${response.id} is now pending admin verification and up to Rs ${estimatedTransfer.toFixed(
+                0,
+              )} will be transferred to ${beneficiaryId || "the registered buyer account"}.`,
+      });
+    } catch (error) {
+      setClaimState({
+        type: "error",
+        message:
+          error instanceof ApiError
+            ? error.message
+            : "Unable to submit the GST bill right now. Please try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -291,8 +332,12 @@ export default function SanitaryPads() {
                     Amount is capped at the selected store reimbursement limit after bill verification.
                   </p>
                 </div>
-                <Button className="bg-rose-600 hover:bg-rose-700" type="submit">
-                  Submit GST Bill
+                <Button
+                  className="bg-rose-600 hover:bg-rose-700"
+                  type="submit"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Submitting..." : "Submit GST Bill"}
                   <ArrowRight className="ml-2 size-4" />
                 </Button>
               </div>

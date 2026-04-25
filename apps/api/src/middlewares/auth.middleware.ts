@@ -4,6 +4,7 @@ import { StatusCodes } from "http-status-codes";
 import { queueAuditLogJob } from "queues/jobs/audit.job";
 import { AppError } from "shared/errors/app-error";
 import { verifyAccessToken } from "utils/token";
+import { logger } from "utils/logger";
 
 const logSecurityEvent = (req: Request, reason: string, metadata?: Record<string, unknown>) => {
   void queueAuditLogJob({
@@ -40,8 +41,7 @@ export const authenticate = (req: Request, _res: Response, next: NextFunction) =
     };
 
     if (process.env.NODE_ENV !== "production") {
-      console.log("Decoded token payload:", payload);
-      console.log("User:", req.user);
+      logger.debug({ userId: payload.id, role: payload.role }, "Authenticated request");
     }
 
     next();

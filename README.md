@@ -80,3 +80,10 @@ The repository also includes `apps/ai-service`, a FastAPI-based companion servic
 |-- package.json      # Workspace scripts
 `-- turbo.json        # Monorepo task orchestration
 ```
+
+## Deployment Notes
+
+- Root `npm run build` now verifies both the Next.js frontend in `frontend` and the API in `apps/api`.
+- Copy [`.env.example`](C:\Users\ADMIN\Desktop\IEEE\.env.example) for shared deployment values, then use [frontend/.env.example](C:\Users\ADMIN\Desktop\IEEE\frontend\.env.example) and [apps/api/.env.example](C:\Users\ADMIN\Desktop\IEEE\apps\api\.env.example) for service-specific values.
+- Production deployments must provide a real `DATABASE_URL` and a strong `JWT_SECRET` or explicit `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET`.
+- Redis-backed queues degrade safely when Redis is unavailable, but background jobs will remain disabled until `REDIS_URL` is reachable.

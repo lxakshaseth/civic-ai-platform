@@ -88,4 +88,69 @@ export class AdminController {
       data: complaint
     });
   }
+
+  async sanitarySummary(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError("Authentication required", StatusCodes.UNAUTHORIZED, "AUTH_REQUIRED");
+    }
+
+    const summary = await adminService.getSanitarySummary(req.user);
+
+    return sendSuccess(res, StatusCodes.OK, {
+      message: "Sanitary reimbursement summary fetched",
+      data: summary
+    });
+  }
+
+  async sanitaryRequests(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError("Authentication required", StatusCodes.UNAUTHORIZED, "AUTH_REQUIRED");
+    }
+
+    const requests = await adminService.listSanitaryRequests(req.user, req.query);
+
+    return sendSuccess(res, StatusCodes.OK, {
+      message: "Sanitary reimbursement requests fetched",
+      data: requests
+    });
+  }
+
+  async approveSanitaryRequest(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError("Authentication required", StatusCodes.UNAUTHORIZED, "AUTH_REQUIRED");
+    }
+
+    const requestRecord = await adminService.approveSanitaryRequest(req.user, req.params.id, req.body);
+
+    return sendSuccess(res, StatusCodes.OK, {
+      message: "Sanitary reimbursement marked as paid",
+      data: requestRecord
+    });
+  }
+
+  async rejectSanitaryRequest(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError("Authentication required", StatusCodes.UNAUTHORIZED, "AUTH_REQUIRED");
+    }
+
+    const requestRecord = await adminService.rejectSanitaryRequest(req.user, req.params.id, req.body);
+
+    return sendSuccess(res, StatusCodes.OK, {
+      message: "Sanitary reimbursement rejected",
+      data: requestRecord
+    });
+  }
+
+  async flagSanitaryRequest(req: Request, res: Response) {
+    if (!req.user) {
+      throw new AppError("Authentication required", StatusCodes.UNAUTHORIZED, "AUTH_REQUIRED");
+    }
+
+    const requestRecord = await adminService.flagSanitaryRequest(req.user, req.params.id, req.body);
+
+    return sendSuccess(res, StatusCodes.OK, {
+      message: "Sanitary reimbursement flagged",
+      data: requestRecord
+    });
+  }
 }

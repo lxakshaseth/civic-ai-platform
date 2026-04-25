@@ -46,6 +46,7 @@ import CommandCenter from "./pages/admin/CommandCenter";
 import AuditCompliance from "./pages/admin/AuditCompliance";
 import BroadcastCenter from "./pages/admin/BroadcastCenter";
 import ComplaintOperations from "./pages/admin/ComplaintOperations";
+import SanitaryReimbursementPage from "./pages/admin/SanitaryReimbursementPage";
 
 type RouteParams = Record<string, string>;
 
@@ -101,6 +102,11 @@ const rawRoutes: RouteDefinition[] = [
   { path: "/admin/fraud", component: FraudDetection, layout: AdminLayout },
   { path: "/admin/city-health", component: CityHealthIndex, layout: AdminLayout },
   { path: "/admin/sustainability", component: SustainabilityIndex, layout: AdminLayout },
+  {
+    path: "/admin/sanitary-reimbursement",
+    component: SanitaryReimbursementPage,
+    layout: AdminLayout,
+  },
   { path: "/admin/users", component: UserManagement, layout: AdminLayout },
   { path: "/admin/reports", component: Reports, layout: AdminLayout },
 ];

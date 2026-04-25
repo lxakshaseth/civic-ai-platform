@@ -17,6 +17,7 @@ import {
   LogOut,
   Megaphone,
   Menu,
+  Wallet,
   Search,
   Shield,
   ShieldCheck,
@@ -113,6 +114,12 @@ export default function AdminLayout() {
     {
       title: "Management",
       items: [
+        {
+          name: "Sanitary Reimbursement Management",
+          href: "/admin/sanitary-reimbursement",
+          icon: Wallet,
+          badge: "Active",
+        },
         { name: "User Management", href: "/admin/users", icon: Users, badge: null },
         { name: "Reports", href: "/admin/reports", icon: FileText, badge: "New" },
       ],

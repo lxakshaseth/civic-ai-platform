@@ -1,7 +1,7 @@
 import { DailyBoostMood, DailyBoostType, UserRole } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
 
-import { redis } from "database/clients/redis";
+import { safeRedisGet, safeRedisSet } from "database/clients/redis";
 import { aiClient } from "integrations/ai/ai.client";
 import { GoogleTranslateClient } from "integrations/translation/google-translate.client";
 import { AppError } from "shared/errors/app-error";
@@ -290,7 +290,7 @@ export class AiContentService {
     }
 
     try {
-      const redisValue = await redis.get(cacheKey);
+      const redisValue = await safeRedisGet(cacheKey);
 
       if (!redisValue) {
         return null;
@@ -310,12 +310,7 @@ export class AiContentService {
     });
 
     try {
-      await redis.set(
-        cacheKey,
-        JSON.stringify({ contentId }),
-        "EX",
-        DAILY_BOOST_TTL_SECONDS
-      );
+      await safeRedisSet(cacheKey, JSON.stringify({ contentId }), DAILY_BOOST_TTL_SECONDS);
     } catch {
       // Redis is optional for this feature. Memory cache and database fallback are enough.
     }

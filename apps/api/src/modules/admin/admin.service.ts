@@ -30,6 +30,38 @@ type SuggestedEmployeeRow = {
   activeAssignments: string;
 };
 
+type SanitarySummaryRow = {
+  totalRequests: string;
+  totalApproved: string;
+  totalPending: string;
+  totalAmountTransferred: string;
+  flaggedCount: string;
+};
+
+type SanitaryRequestRow = {
+  id: string;
+  citizenId: string | null;
+  citizenName: string | null;
+  dateApplied: string | null;
+  upiId: string | null;
+  amount: string | number | null;
+  status: string | null;
+  transactionId: string | null;
+  paidAt: string | null;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  flaggedAt: string | null;
+  reviewNote: string | null;
+  fraudReason: string | null;
+  invoiceNumber: string | null;
+  vendorName: string | null;
+  repeatedUpiClaims: string;
+  citizenClaimsLast30Days: string;
+  upiClaimsLast30Days: string;
+};
+
+type SanitaryStatus = "pending" | "approved" | "rejected" | "paid" | "flagged";
+
 export class AdminService {
   constructor(
     private readonly employeesService: EmployeesService = new EmployeesService(),
@@ -161,6 +193,320 @@ export class AdminService {
       actor,
       requestContext
     );
+  }
+
+  async getSanitarySummary(actor: Actor) {
+    this.assertAdmin(actor);
+
+    const result = await queryCivicPlatform<SanitarySummaryRow>(
+      `
+        SELECT
+          COUNT(*)::text AS "totalRequests",
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, 'pending')) IN ('approved', 'paid')
+          )::text AS "totalApproved",
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, 'pending')) = 'pending'
+          )::text AS "totalPending",
+          COALESCE(
+            SUM(
+              CASE
+                WHEN LOWER(COALESCE(status, 'pending')) = 'paid' THEN amount
+                ELSE 0
+              END
+            ),
+            0
+          )::text AS "totalAmountTransferred",
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, 'pending')) = 'flagged'
+          )::text AS "flaggedCount"
+        FROM public.sanitary_reimbursement_requests
+      `
+    );
+
+    return {
+      totalRequests: Number(result.rows[0]?.totalRequests ?? 0),
+      totalApproved: Number(result.rows[0]?.totalApproved ?? 0),
+      totalPending: Number(result.rows[0]?.totalPending ?? 0),
+      totalAmountTransferred: Number(result.rows[0]?.totalAmountTransferred ?? 0),
+      flaggedCount: Number(result.rows[0]?.flaggedCount ?? 0)
+    };
+  }
+
+  async listSanitaryRequests(
+    actor: Actor,
+    filters: {
+      status?: string;
+      search?: string;
+    } = {}
+  ) {
+    this.assertAdmin(actor);
+
+    const params: unknown[] = [];
+    const where: string[] = [];
+
+    if (filters.status?.trim()) {
+      params.push(filters.status.trim().toLowerCase());
+      where.push(`LOWER(COALESCE(r.status, 'pending')) = $${params.length}`);
+    }
+
+    if (filters.search?.trim()) {
+      params.push(`%${filters.search.trim().toLowerCase()}%`);
+      where.push(`
+        (
+          LOWER(COALESCE(r.citizen_name, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(u.name, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(r.upi_id, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(r.transaction_id, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(r.invoice_number, '')) LIKE $${params.length}
+        )
+      `);
+    }
+
+    const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const result = await queryCivicPlatform<SanitaryRequestRow>(
+      `
+        SELECT
+          r.id,
+          r.citizen_id AS "citizenId",
+          COALESCE(
+            NULLIF(BTRIM(r.citizen_name), ''),
+            NULLIF(BTRIM(u.name), ''),
+            SPLIT_PART(COALESCE(u.email, ''), '@', 1),
+            'Citizen'
+          ) AS "citizenName",
+          COALESCE(r.applied_at, r.created_at)::text AS "dateApplied",
+          NULLIF(BTRIM(r.upi_id), '') AS "upiId",
+          r.amount::text AS amount,
+          LOWER(COALESCE(r.status, 'pending')) AS status,
+          NULLIF(BTRIM(r.transaction_id), '') AS "transactionId",
+          r.paid_at::text AS "paidAt",
+          r.approved_at::text AS "approvedAt",
+          r.rejected_at::text AS "rejectedAt",
+          r.flagged_at::text AS "flaggedAt",
+          NULLIF(BTRIM(r.review_note), '') AS "reviewNote",
+          NULLIF(BTRIM(r.fraud_reason), '') AS "fraudReason",
+          NULLIF(BTRIM(r.invoice_number), '') AS "invoiceNumber",
+          NULLIF(BTRIM(r.vendor_name), '') AS "vendorName",
+          (
+            SELECT COUNT(*)
+            FROM public.sanitary_reimbursement_requests dup
+            WHERE NULLIF(BTRIM(LOWER(dup.upi_id)), '') = NULLIF(BTRIM(LOWER(r.upi_id)), '')
+          )::text AS "repeatedUpiClaims",
+          (
+            SELECT COUNT(*)
+            FROM public.sanitary_reimbursement_requests dup
+            WHERE dup.citizen_id = r.citizen_id
+              AND COALESCE(dup.applied_at, dup.created_at) >= CURRENT_TIMESTAMP - INTERVAL '30 days'
+          )::text AS "citizenClaimsLast30Days",
+          (
+            SELECT COUNT(*)
+            FROM public.sanitary_reimbursement_requests dup
+            WHERE NULLIF(BTRIM(LOWER(dup.upi_id)), '') = NULLIF(BTRIM(LOWER(r.upi_id)), '')
+              AND COALESCE(dup.applied_at, dup.created_at) >= CURRENT_TIMESTAMP - INTERVAL '30 days'
+          )::text AS "upiClaimsLast30Days"
+        FROM public.sanitary_reimbursement_requests r
+        LEFT JOIN public.users u
+          ON u.id = r.citizen_id
+        ${whereClause}
+        ORDER BY COALESCE(r.applied_at, r.created_at) DESC, r.id DESC
+      `,
+      params
+    );
+
+    return result.rows.map((row) => {
+      const repeatedUpiClaims = Number(row.repeatedUpiClaims ?? 0);
+      const citizenClaimsLast30Days = Number(row.citizenClaimsLast30Days ?? 0);
+      const upiClaimsLast30Days = Number(row.upiClaimsLast30Days ?? 0);
+      const fraudSignals: string[] = [];
+
+      if (repeatedUpiClaims > 1) {
+        fraudSignals.push("Repeated UPI ID");
+      }
+
+      if (citizenClaimsLast30Days > 2) {
+        fraudSignals.push("Multiple claims by same citizen");
+      }
+
+      if (upiClaimsLast30Days > 2) {
+        fraudSignals.push("Too many recent claims on same UPI");
+      }
+
+      return {
+        id: row.id,
+        citizenId: row.citizenId,
+        citizenName: row.citizenName?.trim() || "Citizen",
+        dateApplied: row.dateApplied ?? null,
+        upiId: row.upiId?.trim() || "Not provided",
+        amount: Number(row.amount ?? 0),
+        status: this.normalizeSanitaryStatus(row.status),
+        transactionId: row.transactionId?.trim() || null,
+        paidAt: row.paidAt ?? null,
+        approvedAt: row.approvedAt ?? null,
+        rejectedAt: row.rejectedAt ?? null,
+        flaggedAt: row.flaggedAt ?? null,
+        reviewNote: row.reviewNote?.trim() || null,
+        fraudReason: row.fraudReason?.trim() || null,
+        invoiceNumber: row.invoiceNumber?.trim() || null,
+        vendorName: row.vendorName?.trim() || null,
+        suspicious: fraudSignals.length > 0 || this.normalizeSanitaryStatus(row.status) === "flagged",
+        fraudSignals,
+        repeatedUpiClaims,
+        citizenClaimsLast30Days,
+        upiClaimsLast30Days
+      };
+    });
+  }
+
+  async approveSanitaryRequest(
+    actor: Actor,
+    id: string,
+    input: {
+      transactionId?: string;
+      note?: string;
+    } = {}
+  ) {
+    this.assertAdmin(actor);
+
+    const transactionId =
+      input.transactionId?.trim() ||
+      `SAN-${Date.now().toString(36).toUpperCase()}-${id.slice(0, 6).toUpperCase()}`;
+
+    const result = await queryCivicPlatform<SanitaryRequestRow>(
+      `
+        UPDATE public.sanitary_reimbursement_requests
+        SET
+          status = 'paid',
+          transaction_id = $2,
+          approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+          paid_at = CURRENT_TIMESTAMP,
+          rejected_at = NULL,
+          flagged_at = NULL,
+          review_note = COALESCE(NULLIF($3, ''), review_note),
+          fraud_reason = NULL,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        RETURNING
+          id,
+          citizen_id AS "citizenId",
+          citizen_name AS "citizenName",
+          COALESCE(applied_at, created_at)::text AS "dateApplied",
+          upi_id AS "upiId",
+          amount::text AS amount,
+          status,
+          transaction_id AS "transactionId",
+          paid_at::text AS "paidAt",
+          approved_at::text AS "approvedAt",
+          rejected_at::text AS "rejectedAt",
+          flagged_at::text AS "flaggedAt",
+          review_note AS "reviewNote",
+          fraud_reason AS "fraudReason",
+          invoice_number AS "invoiceNumber",
+          vendor_name AS "vendorName",
+          '0'::text AS "repeatedUpiClaims",
+          '0'::text AS "citizenClaimsLast30Days",
+          '0'::text AS "upiClaimsLast30Days"
+      `,
+      [id, transactionId, input.note?.trim() ?? ""]
+    );
+
+    return this.assertSanitaryRequestFound(result.rows[0], id);
+  }
+
+  async rejectSanitaryRequest(
+    actor: Actor,
+    id: string,
+    input: {
+      note?: string;
+    } = {}
+  ) {
+    this.assertAdmin(actor);
+
+    const result = await queryCivicPlatform<SanitaryRequestRow>(
+      `
+        UPDATE public.sanitary_reimbursement_requests
+        SET
+          status = 'rejected',
+          rejected_at = CURRENT_TIMESTAMP,
+          approved_at = NULL,
+          paid_at = NULL,
+          flagged_at = NULL,
+          review_note = COALESCE(NULLIF($2, ''), review_note),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        RETURNING
+          id,
+          citizen_id AS "citizenId",
+          citizen_name AS "citizenName",
+          COALESCE(applied_at, created_at)::text AS "dateApplied",
+          upi_id AS "upiId",
+          amount::text AS amount,
+          status,
+          transaction_id AS "transactionId",
+          paid_at::text AS "paidAt",
+          approved_at::text AS "approvedAt",
+          rejected_at::text AS "rejectedAt",
+          flagged_at::text AS "flaggedAt",
+          review_note AS "reviewNote",
+          fraud_reason AS "fraudReason",
+          invoice_number AS "invoiceNumber",
+          vendor_name AS "vendorName",
+          '0'::text AS "repeatedUpiClaims",
+          '0'::text AS "citizenClaimsLast30Days",
+          '0'::text AS "upiClaimsLast30Days"
+      `,
+      [id, input.note?.trim() ?? ""]
+    );
+
+    return this.assertSanitaryRequestFound(result.rows[0], id);
+  }
+
+  async flagSanitaryRequest(
+    actor: Actor,
+    id: string,
+    input: {
+      reason?: string;
+      note?: string;
+    } = {}
+  ) {
+    this.assertAdmin(actor);
+
+    const result = await queryCivicPlatform<SanitaryRequestRow>(
+      `
+        UPDATE public.sanitary_reimbursement_requests
+        SET
+          status = 'flagged',
+          flagged_at = CURRENT_TIMESTAMP,
+          review_note = COALESCE(NULLIF($2, ''), review_note),
+          fraud_reason = COALESCE(NULLIF($3, ''), fraud_reason, 'Suspicious reimbursement pattern'),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        RETURNING
+          id,
+          citizen_id AS "citizenId",
+          citizen_name AS "citizenName",
+          COALESCE(applied_at, created_at)::text AS "dateApplied",
+          upi_id AS "upiId",
+          amount::text AS amount,
+          status,
+          transaction_id AS "transactionId",
+          paid_at::text AS "paidAt",
+          approved_at::text AS "approvedAt",
+          rejected_at::text AS "rejectedAt",
+          flagged_at::text AS "flaggedAt",
+          review_note AS "reviewNote",
+          fraud_reason AS "fraudReason",
+          invoice_number AS "invoiceNumber",
+          vendor_name AS "vendorName",
+          '0'::text AS "repeatedUpiClaims",
+          '0'::text AS "citizenClaimsLast30Days",
+          '0'::text AS "upiClaimsLast30Days"
+      `,
+      [id, input.note?.trim() ?? "", input.reason?.trim() ?? ""]
+    );
+
+    return this.assertSanitaryRequestFound(result.rows[0], id);
   }
 
   async listUnassignedComplaints(actor: Actor) {
@@ -365,5 +711,49 @@ export class AdminService {
     if (actor.role !== UserRole.DEPARTMENT_ADMIN && actor.role !== UserRole.SUPER_ADMIN) {
       throw new AppError("Forbidden", StatusCodes.FORBIDDEN, "FORBIDDEN");
     }
+  }
+
+  private normalizeSanitaryStatus(status?: string | null): SanitaryStatus {
+    switch (status?.trim().toLowerCase()) {
+      case "approved":
+        return "approved";
+      case "rejected":
+        return "rejected";
+      case "paid":
+        return "paid";
+      case "flagged":
+        return "flagged";
+      default:
+        return "pending";
+    }
+  }
+
+  private assertSanitaryRequestFound(record: SanitaryRequestRow | undefined, id: string) {
+    if (!record) {
+      throw new AppError(
+        `Sanitary reimbursement request ${id} not found`,
+        StatusCodes.NOT_FOUND,
+        "SANITARY_REQUEST_NOT_FOUND"
+      );
+    }
+
+    return {
+      id: record.id,
+      citizenId: record.citizenId,
+      citizenName: record.citizenName?.trim() || "Citizen",
+      dateApplied: record.dateApplied ?? null,
+      upiId: record.upiId?.trim() || "Not provided",
+      amount: Number(record.amount ?? 0),
+      status: this.normalizeSanitaryStatus(record.status),
+      transactionId: record.transactionId?.trim() || null,
+      paidAt: record.paidAt ?? null,
+      approvedAt: record.approvedAt ?? null,
+      rejectedAt: record.rejectedAt ?? null,
+      flaggedAt: record.flaggedAt ?? null,
+      reviewNote: record.reviewNote?.trim() || null,
+      fraudReason: record.fraudReason?.trim() || null,
+      invoiceNumber: record.invoiceNumber?.trim() || null,
+      vendorName: record.vendorName?.trim() || null
+    };
   }
 }

@@ -20,8 +20,9 @@ const envSchema = z.object({
   CIVIC_PLATFORM_DB_PASSWORD: z.string().default(""),
   REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
   DISABLE_QUEUES: z.coerce.boolean().default(true),
-  JWT_ACCESS_SECRET: z.string().min(16).default("saip-local-access-secret-2026"),
-  JWT_REFRESH_SECRET: z.string().min(16).default("saip-local-refresh-secret-2026"),
+  JWT_SECRET: z.string().min(16).optional(),
+  JWT_ACCESS_SECRET: z.string().min(16).optional(),
+  JWT_REFRESH_SECRET: z.string().min(16).optional(),
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
   CORS_ORIGIN: z
@@ -75,8 +76,32 @@ if (!parsedEnv.success) {
   process.exit(1);
 }
 
+const accessSecret =
+  parsedEnv.data.JWT_ACCESS_SECRET?.trim() || parsedEnv.data.JWT_SECRET?.trim() || "";
+const refreshSecret =
+  parsedEnv.data.JWT_REFRESH_SECRET?.trim() || parsedEnv.data.JWT_SECRET?.trim() || "";
+const isProduction = parsedEnv.data.NODE_ENV === "production";
+
+if (!parsedEnv.data.DATABASE_URL.trim()) {
+  console.error("DATABASE_URL is required.");
+  process.exit(1);
+}
+
+if (!accessSecret || !refreshSecret) {
+  console.error("Set JWT_SECRET or both JWT_ACCESS_SECRET and JWT_REFRESH_SECRET.");
+  process.exit(1);
+}
+
+if (isProduction && parsedEnv.data.DATABASE_URL.includes("postgres:password@localhost")) {
+  console.error("DATABASE_URL must be set to a production database before deployment.");
+  process.exit(1);
+}
+
 export const env = {
   ...parsedEnv.data,
+  JWT_SECRET: parsedEnv.data.JWT_SECRET?.trim() || accessSecret,
+  JWT_ACCESS_SECRET: accessSecret,
+  JWT_REFRESH_SECRET: refreshSecret,
   CORS_ORIGIN: parsedEnv.data.CORS_ORIGIN.split(",").map((origin) => origin.trim()),
   PUBLIC_BASE_URL:
     parsedEnv.data.PUBLIC_BASE_URL?.trim() || `http://localhost:${parsedEnv.data.PORT}`
