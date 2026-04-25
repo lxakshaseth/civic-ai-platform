@@ -3,10 +3,15 @@ import Redis from "ioredis";
 import { env } from "config/env";
 import { logger } from "utils/logger";
 
-export const redis = new Redis(env.REDIS_URL, {
-  maxRetriesPerRequest: null,
-  lazyConnect: true
-});
+export const redis =
+  env.REDIS_URL_IS_VALID
+    ? new Redis(env.REDIS_URL, {
+        maxRetriesPerRequest: null,
+        lazyConnect: true,
+        enableReadyCheck: true,
+        tls: env.REDIS_URL.startsWith("rediss:") ? { rejectUnauthorized: false } : undefined
+      })
+    : null;
 
 let hasLoggedRedisFailure = false;
 
@@ -19,7 +24,8 @@ const logRedisFailure = (error: unknown) => {
   logger.warn(
     {
       error,
-      redisUrl: env.REDIS_URL
+      hasRedisUrl: Boolean(env.REDIS_URL),
+      redisUrlValid: env.REDIS_URL_IS_VALID
     },
     "Redis is unavailable. Continuing without Redis-backed features."
   );
@@ -31,7 +37,12 @@ export const connectRedis = async () => {
     return null;
   }
 
-  if (redis.status === "ready" || redis.status === "connecting") {
+  if (!redis) {
+    logger.error("REDIS_URL is missing, invalid, or contains a placeholder. Redis features are disabled.");
+    return null;
+  }
+
+  if (redis.status === "ready" || redis.status === "connecting" || redis.status === "connect") {
     return redis;
   }
 
@@ -61,11 +72,7 @@ export const safeRedisGet = async (key: string) => {
   }
 };
 
-export const safeRedisSet = async (
-  key: string,
-  value: string,
-  ttlSeconds?: number
-) => {
+export const safeRedisSet = async (key: string, value: string, ttlSeconds?: number) => {
   try {
     const client = await connectRedis();
 

@@ -14,12 +14,35 @@ import { createApp } from "app";
 import { logger } from "utils/logger";
 
 const bootstrap = async () => {
-  const shouldStartQueues = !env.DISABLE_QUEUES && Boolean(await connectRedis());
+  logger.info(
+    {
+      nodeEnv: env.NODE_ENV,
+      port: env.PORT,
+      hasDatabaseUrl: Boolean(env.DATABASE_URL),
+      hasRedisUrl: Boolean(env.REDIS_URL),
+      envValidationErrors: env.ENV_VALIDATION_ERRORS
+    },
+    "Starting API server"
+  );
+
+  let shouldStartQueues = false;
+
+  try {
+    shouldStartQueues = !env.DISABLE_QUEUES && Boolean(await connectRedis());
+  } catch (error) {
+    logger.error({ error }, "Redis startup check failed. Continuing without queue workers.");
+  }
 
   if (civicPlatformPool) {
-    await civicPlatformPool.query("SELECT 1");
-    await ensureCivicPlatformSchema();
-    logger.info("PostgreSQL connected successfully");
+    try {
+      await civicPlatformPool.query("SELECT 1");
+      await ensureCivicPlatformSchema();
+      logger.info("PostgreSQL connected successfully");
+    } catch (error) {
+      logger.error({ error }, "PostgreSQL startup check failed. Continuing without database connectivity.");
+    }
+  } else {
+    logger.error("DATABASE_URL is missing, invalid, or contains a placeholder. Database features are disabled.");
   }
 
   const app = createApp();
@@ -28,10 +51,20 @@ const bootstrap = async () => {
   initSocketServer(httpServer);
 
   if (shouldStartQueues) {
-    startQueueWorkers();
+    try {
+      startQueueWorkers();
+      logger.info("Queue workers started");
+    } catch (error) {
+      logger.error({ error }, "Failed to start queue workers. Continuing without queues.");
+      shouldStartQueues = false;
+    }
   } else if (!env.DISABLE_QUEUES) {
     logger.warn("Redis is unavailable. Queue workers will stay disabled for this process.");
   }
+
+  httpServer.on("error", (error) => {
+    logger.error({ error }, "HTTP server failed to start");
+  });
 
   httpServer.listen(env.PORT, () => {
     logger.info(`API server listening on port ${env.PORT}`);
@@ -41,14 +74,22 @@ const bootstrap = async () => {
     logger.info("Graceful shutdown started");
 
     if (shouldStartQueues) {
-      await stopQueueWorkers();
-      await closeQueues();
-      await closeBullMqConnection();
+      await stopQueueWorkers().catch((error) => {
+        logger.error({ error }, "Failed to stop queue workers cleanly");
+      });
+      await closeQueues().catch((error) => {
+        logger.error({ error }, "Failed to close queues cleanly");
+      });
+      await closeBullMqConnection().catch((error) => {
+        logger.error({ error }, "Failed to close BullMQ connection cleanly");
+      });
     }
 
     httpServer.close(async () => {
       if (civicPlatformPool) {
-        await civicPlatformPool.end();
+        await civicPlatformPool.end().catch((error) => {
+          logger.error({ error }, "Failed to close PostgreSQL pool cleanly");
+        });
       }
 
       logger.info("Shutdown completed");
@@ -61,7 +102,7 @@ const bootstrap = async () => {
 };
 
 bootstrap().catch(async (error) => {
-  logger.error({ error }, "Failed to start API server");
+  logger.error({ error }, "Unexpected bootstrap failure. Server process will stay alive only if HTTP startup succeeded.");
 
   if (civicPlatformPool) {
     await civicPlatformPool.end().catch(() => undefined);
