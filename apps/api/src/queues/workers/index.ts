@@ -1,4 +1,5 @@
 import { env } from "config/env";
+import { bullMqConnection } from "queues/connection";
 
 import type { Worker } from "bullmq";
 
@@ -9,7 +10,7 @@ import { createNotificationWorker } from "./notification.worker";
 let workers: Worker[] = [];
 
 export const startQueueWorkers = () => {
-  if (env.DISABLE_QUEUES) {
+  if (env.DISABLE_QUEUES || !bullMqConnection) {
     return workers;
   }
 

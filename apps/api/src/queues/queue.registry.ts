@@ -25,6 +25,7 @@ const createNoopQueue = (): QueueLike => ({
 });
 
 export const notificationQueue: QueueLike = env.DISABLE_QUEUES
+  || !bullMqConnection
   ? createNoopQueue()
   : new Queue(QUEUE_NAMES.notifications, {
       connection: bullMqConnection,
@@ -33,6 +34,7 @@ export const notificationQueue: QueueLike = env.DISABLE_QUEUES
     });
 
 export const complaintAiQueue: QueueLike = env.DISABLE_QUEUES
+  || !bullMqConnection
   ? createNoopQueue()
   : new Queue(QUEUE_NAMES.complaintAi, {
       connection: bullMqConnection,
@@ -41,6 +43,7 @@ export const complaintAiQueue: QueueLike = env.DISABLE_QUEUES
     });
 
 export const auditQueue: QueueLike = env.DISABLE_QUEUES
+  || !bullMqConnection
   ? createNoopQueue()
   : new Queue(QUEUE_NAMES.audit, {
       connection: bullMqConnection,

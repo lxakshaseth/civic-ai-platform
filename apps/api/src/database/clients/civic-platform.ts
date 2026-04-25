@@ -8,11 +8,17 @@ const globalForCivicPlatform = globalThis as unknown as {
 };
 
 function resolveCivicPlatformDatabaseUrl() {
-  if (env.EMPLOYEE_DIRECTORY_DATABASE_URL.trim()) {
-    return env.EMPLOYEE_DIRECTORY_DATABASE_URL;
+  const employeeDirectoryUrl = env.EMPLOYEE_DIRECTORY_DATABASE_URL.trim();
+
+  if (employeeDirectoryUrl.startsWith("postgresql://")) {
+    return employeeDirectoryUrl;
   }
 
-  return env.DATABASE_URL;
+  if (env.DATABASE_URL_IS_VALID) {
+    return env.DATABASE_URL;
+  }
+
+  return "";
 }
 
 function resolveCivicPlatformPoolConfig(): PoolConfig | null {
@@ -24,19 +30,23 @@ function resolveCivicPlatformPoolConfig(): PoolConfig | null {
 
   try {
     const parsedUrl = new URL(databaseUrl);
+    const isLocalDatabase = ["localhost", "127.0.0.1", "::1"].includes(parsedUrl.hostname);
+    const sslMode = parsedUrl.searchParams.get("sslmode");
+    const shouldUseSsl = !isLocalDatabase && sslMode !== "disable";
 
     return {
-      host: parsedUrl.hostname || env.CIVIC_PLATFORM_DB_HOST || "localhost",
+      host: parsedUrl.hostname || env.CIVIC_PLATFORM_DB_HOST || "",
       port: parsedUrl.port ? Number(parsedUrl.port) : env.CIVIC_PLATFORM_DB_PORT || 5432,
-      user: decodeURIComponent(parsedUrl.username) || env.CIVIC_PLATFORM_DB_USER || "postgres",
+      user: decodeURIComponent(parsedUrl.username) || env.CIVIC_PLATFORM_DB_USER || "",
       password: decodeURIComponent(parsedUrl.password) || env.CIVIC_PLATFORM_DB_PASSWORD,
-      database:
-        parsedUrl.pathname.replace(/^\//, "") || env.CIVIC_PLATFORM_DB_NAME || "civic_platform",
+      database: parsedUrl.pathname.replace(/^\//, "") || env.CIVIC_PLATFORM_DB_NAME || "",
       max: 10,
       idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 5000
+      connectionTimeoutMillis: 5000,
+      ssl: shouldUseSsl ? { rejectUnauthorized: false } : undefined
     };
-  } catch {
+  } catch (error) {
+    logger.error({ error }, "DATABASE_URL is invalid. PostgreSQL client will stay disabled.");
     return null;
   }
 }
@@ -72,7 +82,8 @@ export async function queryCivicPlatform<TRow extends QueryResultRow = QueryResu
   } catch (error) {
     const errorCode =
       typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
-    const canRetry = retries > 0 && ["57P01", "57P02", "ECONNRESET", "ECONNREFUSED"].includes(errorCode);
+    const canRetry =
+      retries > 0 && ["57P01", "57P02", "ECONNRESET", "ECONNREFUSED"].includes(errorCode);
 
     if (canRetry) {
       logger.warn({ errorCode, retries }, "Retrying PostgreSQL query after transient failure");
@@ -278,6 +289,7 @@ const bootstrapDoStatements = [
 
 export async function ensureCivicPlatformSchema() {
   if (!civicPlatformPool) {
+    logger.warn("Skipping PostgreSQL schema bootstrap because DATABASE_URL is invalid or missing.");
     return;
   }
 
