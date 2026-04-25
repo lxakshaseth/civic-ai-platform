@@ -12,6 +12,13 @@ const { logger, requestLogger } = require('./middlewares/requestLogger')
 const complaintRoutes = require('./routes/complaintRoutes')
 const userRoutes = require('./routes/userRoutes')
 
+/* ---------------- DEBUG ENV ---------------- */
+console.log("🌍 ENV DEBUG START")
+console.log("DATABASE_URL:", process.env.DATABASE_URL ? "FOUND ✅" : "MISSING ❌")
+console.log("REDIS_URL:", process.env.REDIS_URL ? "FOUND ✅" : "MISSING ❌")
+console.log("NODE_ENV:", process.env.NODE_ENV)
+console.log("🌍 ENV DEBUG END")
+
 /* ---------------- CORS ---------------- */
 function buildCorsOptions() {
   const allowedOrigins = parseOrigins(process.env.CORS_ORIGIN)
@@ -37,19 +44,24 @@ function getApiPrefix() {
   return prefix.startsWith('/') ? prefix : `/${prefix}`
 }
 
-/* ---------------- HEALTH CHECKS ---------------- */
+/* ---------------- HEALTH ---------------- */
 async function checkDatabaseHealth() {
+  console.log("🔍 Checking DB connection...")
   await query('SELECT 1')
+  console.log("✅ DB QUERY SUCCESS")
   return 'connected'
 }
 
 async function checkRedisHealth() {
+  console.log("🔍 Checking Redis...")
   await ensureRedisConnection()
+
   await redis.set('health', 'ok', 'EX', 10)
   const value = await redis.get('health')
 
   if (value !== 'ok') throw new Error('Redis failed')
 
+  console.log("✅ Redis OK")
   return 'connected'
 }
 
@@ -89,7 +101,7 @@ function createApp() {
   app.use(express.json({ limit: '2mb' }))
   app.use(express.urlencoded({ extended: true }))
 
-  // 🔥 Root route (important for browser + Render test)
+  // ✅ Root route
   app.get('/', (req, res) => {
     res.json({
       success: true,
@@ -97,7 +109,7 @@ function createApp() {
     })
   })
 
-  // 🔥 Health route
+  // ✅ Health route
   app.get(['/health', `${apiPrefix}/health`], async (req, res) => {
     const health = await getHealthSnapshot()
 
@@ -108,28 +120,20 @@ function createApp() {
     })
   })
 
-  // 🔥 API routes
+  // ✅ Routes
   app.use(`${apiPrefix}/users`, userRoutes)
   app.use(`${apiPrefix}/complaints`, complaintRoutes)
 
-  // ❌ 404
   app.use(notFoundHandler)
-
-  // ❌ Error handler
   app.use(errorHandler)
 
   return app
 }
 
-/* ---------------- SERVER START ---------------- */
+/* ---------------- START SERVER ---------------- */
 async function startServer() {
   try {
-    console.log('🚀 Starting server...')
-    console.log('ENV CHECK:', {
-      DATABASE_URL: !!process.env.DATABASE_URL,
-      REDIS_URL: !!process.env.REDIS_URL,
-      NODE_ENV: process.env.NODE_ENV,
-    })
+    console.log("🚀 Starting server...")
 
     validateServerEnv()
 
@@ -138,19 +142,22 @@ async function startServer() {
 
     const server = app.listen(port, () => {
       console.log(`✅ Server running on port ${port}`)
-      logger.info({ port }, 'API server started')
     })
 
-    // 🔥 Non-blocking health checks
+    // 🔥 DB CHECK (IMPORTANT DEBUG)
     checkDatabaseHealth()
-      .then(() => console.log('✅ DB connected'))
-      .catch((e) => console.warn('⚠️ DB error:', e.message))
+      .then(() => console.log('🎯 DB CONNECTED SUCCESSFULLY'))
+      .catch((e) => {
+        console.error("❌ DB CONNECTION FAILED")
+        console.error("REASON:", e.message)
+      })
 
+    // 🔥 Redis check
     checkRedisHealth()
-      .then(() => console.log('✅ Redis connected'))
+      .then(() => console.log('🎯 REDIS CONNECTED'))
       .catch((e) => console.warn('⚠️ Redis error:', e.message))
 
-    // 🔥 Graceful shutdown
+    // 🔥 Shutdown
     async function shutdown(signal) {
       console.log(`🛑 Shutting down: ${signal}`)
 
@@ -176,7 +183,6 @@ async function startServer() {
   }
 }
 
-/* ---------------- RUN ---------------- */
 if (require.main === module) {
   startServer()
 }
