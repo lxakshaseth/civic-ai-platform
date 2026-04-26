@@ -14,14 +14,33 @@ import { apiRouter } from "routes/index";
 
 export const createApp = () => {
   const app = express();
+  const allowedOrigins = new Set([
+    "http://localhost:3000",
+    "https://civic-ai-platform-frontend-git-main-akshats-projects-eb688e4b.vercel.app"
+  ]);
+  const corsOptions: cors.CorsOptions = {
+    // CORS must run before all routes and before any response is sent.
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+  };
 
   // 🌐 CORS
-  app.use(
-    cors({
-      origin: appConfig.corsOrigins,
-      credentials: true
-    })
-  );
+  app.use(cors(corsOptions));
+  app.options("*", cors(corsOptions));
 
   // 🔒 Security
   app.use(
