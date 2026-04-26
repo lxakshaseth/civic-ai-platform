@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import express from "express";
 import dotenv from "dotenv";
 
 import { env } from "config/env";
@@ -18,43 +19,56 @@ import { logger } from "utils/logger";
 dotenv.config();
 
 const bootstrap = async () => {
-  const PORT = process.env.PORT || env.PORT || 4000;
+  const PORT = Number(process.env.PORT) || Number(env.PORT) || 4000;
 
-  // 🔥 CREATE APP + SERVER
-  const app = createApp();
+  // 🔥 Try to create your real app; fallback to a basic one if it throws
+  let app;
+  try {
+    app = createApp();
+  } catch (err) {
+    console.error("❌ createApp() failed, using fallback app:", err);
+    app = express();
+    app.use(express.json());
+    app.get("/", (_req, res) => {
+      res.json({ ok: true, message: "Fallback server running 🚀" });
+    });
+  }
+
   const httpServer = createServer(app);
 
   // 🔥 START SERVER IMMEDIATELY (CRITICAL FOR RENDER)
-  httpServer.listen(PORT, () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 API server listening on port ${PORT}`);
     logger.info(`🚀 API server listening on port ${PORT}`);
   });
 
   httpServer.on("error", (error) => {
+    console.error("❌ HTTP server failed to start:", error);
     logger.error({ error }, "HTTP server failed to start");
   });
 
-  // 🔥 BACKGROUND INITIALIZATION (NON-BLOCKING)
+  // 🔥 NON-BLOCKING BACKGROUND INIT
   (async () => {
     logger.info(
       {
         nodeEnv: env.NODE_ENV,
         port: PORT,
         hasDatabaseUrl: Boolean(env.DATABASE_URL),
-        hasRedisUrl: Boolean(env.REDIS_URL)
+        hasRedisUrl: Boolean(env.REDIS_URL),
       },
       "Background initialization started"
     );
 
     let shouldStartQueues = false;
 
-    // 🔁 Redis
+    // Redis
     try {
       shouldStartQueues = !env.DISABLE_QUEUES && Boolean(await connectRedis());
     } catch (error) {
       logger.error({ error }, "Redis connection failed");
     }
 
-    // 🗄 PostgreSQL
+    // PostgreSQL
     if (civicPlatformPool) {
       try {
         await civicPlatformPool.query("SELECT 1");
@@ -67,7 +81,7 @@ const bootstrap = async () => {
       logger.warn("No PostgreSQL pool configured");
     }
 
-    // 🔥 Prisma
+    // Prisma
     try {
       await prisma.$connect();
       logger.info("Prisma connected");
@@ -75,7 +89,7 @@ const bootstrap = async () => {
       logger.error({ error }, "Prisma failed");
     }
 
-    // ⚙️ Queues
+    // Queues
     if (shouldStartQueues) {
       try {
         startQueueWorkers();
@@ -85,7 +99,7 @@ const bootstrap = async () => {
       }
     }
 
-    // 🔌 Sockets
+    // Sockets
     try {
       initSocketServer(httpServer);
     } catch (error) {
@@ -93,7 +107,7 @@ const bootstrap = async () => {
     }
   })();
 
-  // 🛑 GRACEFUL SHUTDOWN
+  // 🛑 Graceful shutdown
   const shutdown = async () => {
     logger.info("Shutdown started");
 
@@ -114,6 +128,7 @@ const bootstrap = async () => {
 
 // 🚀 START
 bootstrap().catch(async (error) => {
+  console.error("❌ Bootstrap failed:", error);
   logger.error({ error }, "Unexpected bootstrap failure");
 
   if (civicPlatformPool) {
@@ -121,6 +136,5 @@ bootstrap().catch(async (error) => {
   }
 
   await prisma.$disconnect().catch(() => {});
-
   process.exit(1);
 });
