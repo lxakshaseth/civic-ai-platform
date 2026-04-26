@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import cors, { type CorsOptions } from "cors";
 import express from "express";
 import dotenv from "dotenv";
 
@@ -14,28 +15,84 @@ import { logger } from "utils/logger";
 
 dotenv.config();
 
+const allowedOrigins = new Set([
+  "http://localhost:3000",
+  "https://civic-ai-platform-frontend-git-main-akshats-projects-eb688e4b.vercel.app"
+]);
+
+const corsOptions: CorsOptions = {
+  // Reflect only trusted origins so credentials remain safe in production.
+  origin(origin, callback) {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    if (allowedOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  optionsSuccessStatus: 204
+};
+
+const buildFallbackApp = () => {
+  const app = express();
+
+  // Keep fallback middleware order identical to the main app path.
+  app.use(cors(corsOptions));
+  app.options("*", cors(corsOptions));
+  app.use(express.json());
+
+  app.get("/", (_req, res) => {
+    res.json({ success: true, message: "Fallback server running" });
+  });
+
+  app.get("/api", (_req, res) => {
+    res.status(200).json({ success: true, message: "API is live" });
+  });
+
+  return app;
+};
+
 const bootstrap = async () => {
-  const PORT = Number(process.env.PORT) || Number(env.PORT) || 4000;
+  const PORT = Number(process.env.PORT || env.PORT || 10000);
 
-  console.log("ENV DATABASE_URL:", process.env.DATABASE_URL);
-
-  let app;
+  let serviceApp;
   try {
-    app = createApp();
+    serviceApp = createApp();
   } catch (error) {
     console.error("createApp() failed, using fallback app:", error);
-    app = express();
-    app.use(express.json());
-    app.get("/", (_req, res) => {
-      res.json({ success: true, message: "Fallback server running" });
-    });
+    logger.error({ error }, "createApp failed, using fallback app");
+    serviceApp = buildFallbackApp();
   }
+
+  const app = express();
+
+  // Apply CORS before all routes and before any response is sent.
+  app.use(cors(corsOptions));
+  app.options("*", cors(corsOptions));
+
+  // Parse JSON early so direct server-level routes and fallbacks can read request bodies.
+  app.use(express.json());
+
+  // Lightweight health endpoint for Render startup checks.
+  app.get("/api", (_req, res) => {
+    res.status(200).json({ success: true, message: "API is live" });
+  });
+
+  app.use(serviceApp);
 
   const httpServer = createServer(app);
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`API server listening on port ${PORT}`);
-    logger.info(`API server listening on port ${PORT}`);
+    logger.info({ port: PORT, host: "0.0.0.0" }, "API server listening");
   });
 
   httpServer.on("error", (error) => {
@@ -43,7 +100,7 @@ const bootstrap = async () => {
     logger.error({ error }, "HTTP server failed");
   });
 
-  (async () => {
+  void (async () => {
     logger.info(
       {
         nodeEnv: env.NODE_ENV,
@@ -64,12 +121,6 @@ const bootstrap = async () => {
 
     try {
       await prisma.$connect();
-
-      const url = (prisma as any)?._engineConfig?.datasources?.[0]?.url ?? "not resolved";
-
-      console.log("Prisma DB URL:", url);
-      console.log("DB TEST:", await prisma.user.findMany());
-
       logger.info("Prisma connected");
     } catch (error) {
       console.error("Prisma failed:", error);
