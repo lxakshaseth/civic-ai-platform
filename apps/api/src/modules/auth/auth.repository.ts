@@ -1,6 +1,6 @@
-import { UserRole } from "@prisma/client";
+import { Prisma, UserRole, type RefreshToken, type User } from "@prisma/client";
 
-import { queryCivicPlatform } from "database/clients/civic-platform";
+import { prisma } from "database/clients/prisma";
 
 export type AuthUserRecord = {
   id: string;
@@ -18,103 +18,92 @@ export type AuthUserRecord = {
   refreshTokenHash: string | null;
 };
 
-const authUserSelect = `
-  id,
-  COALESCE(NULLIF(BTRIM(name), ''), SPLIT_PART(COALESCE(email, ''), '@', 1), 'User') AS "fullName",
-  COALESCE(email, '') AS email,
-  phone,
-  CASE
-    WHEN UPPER(COALESCE(role, '')) = 'SUPER_ADMIN' THEN 'SUPER_ADMIN'
-    WHEN UPPER(COALESCE(role, '')) IN ('ADMIN', 'DEPARTMENT_ADMIN') THEN 'DEPARTMENT_ADMIN'
-    WHEN UPPER(COALESCE(role, '')) = 'EMPLOYEE' THEN 'EMPLOYEE'
-    ELSE 'CITIZEN'
-  END AS role,
-  NULLIF(BTRIM(department), '') AS "departmentId",
-  CASE
-    WHEN LOWER(COALESCE(status, 'ACTIVE')) IN ('inactive', 'disabled', 'terminated', 'blocked')
-      THEN false
-    ELSE true
-  END AS "isActive",
-  password AS "passwordHash",
-  language,
-  gender,
-  show_sanitary_feature AS "showSanitaryFeature",
-  COALESCE(profile_completed, false) AS "profileCompleted",
-  refresh_token_hash AS "refreshTokenHash"
-`;
+const authUserSelect = {
+  id: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  role: true,
+  departmentId: true,
+  isActive: true,
+  passwordHash: true,
+  showSanitaryFeature: true
+} satisfies Prisma.UserSelect;
+
+type PrismaAuthUser = Prisma.UserGetPayload<{ select: typeof authUserSelect }>;
+
+const mapUserRecord = (user: PrismaAuthUser, refreshTokenHash: string | null = null): AuthUserRecord => ({
+  id: user.id,
+  fullName: user.fullName,
+  email: user.email,
+  phone: user.phone,
+  role: user.role,
+  departmentId: user.departmentId,
+  isActive: user.isActive,
+  passwordHash: user.passwordHash,
+  language: "en",
+  gender: null,
+  showSanitaryFeature: user.showSanitaryFeature,
+  profileCompleted: false,
+  refreshTokenHash
+});
 
 export class AuthRepository {
   async findUserByEmail(email: string) {
-    const result = await queryCivicPlatform<AuthUserRecord>(
-      `
-        SELECT ${authUserSelect}
-        FROM public.users
-        WHERE LOWER(COALESCE(email, '')) = LOWER($1)
-        LIMIT 1
-      `,
-      [email.trim()]
-    );
+    const user = await prisma.user.findUnique({
+      where: {
+        email: email.trim().toLowerCase()
+      },
+      select: authUserSelect
+    });
 
-    return result.rows[0] ?? null;
+    return user ? mapUserRecord(user) : null;
   }
 
   async findUserByIdentifier(identifier: string) {
-    const normalizedIdentifier = identifier.trim();
-    const result = await queryCivicPlatform<AuthUserRecord>(
-      `
-        SELECT ${authUserSelect}
-        FROM public.users
-        WHERE
-          LOWER(COALESCE(email, '')) = LOWER($1)
-          OR UPPER(COALESCE(employee_code, '')) = UPPER($1)
-          OR CAST(id AS TEXT) = $1
-        LIMIT 1
-      `,
-      [normalizedIdentifier]
-    );
+    const normalizedIdentifier = identifier.trim().toLowerCase();
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          {
+            email: normalizedIdentifier
+          },
+          {
+            id: identifier.trim()
+          }
+        ]
+      },
+      select: authUserSelect
+    });
 
-    return result.rows[0] ?? null;
+    return user ? mapUserRecord(user) : null;
   }
 
   async findUserByPhone(phone: string) {
-    const result = await queryCivicPlatform<AuthUserRecord>(
-      `
-        SELECT ${authUserSelect}
-        FROM public.users
-        WHERE phone = $1
-        LIMIT 1
-      `,
-      [phone.trim()]
-    );
+    const user = await prisma.user.findUnique({
+      where: {
+        phone: phone.trim()
+      },
+      select: authUserSelect
+    });
 
-    return result.rows[0] ?? null;
+    return user ? mapUserRecord(user) : null;
   }
 
   async findUserById(id: string) {
-    const result = await queryCivicPlatform<AuthUserRecord>(
-      `
-        SELECT ${authUserSelect}
-        FROM public.users
-        WHERE id = $1
-        LIMIT 1
-      `,
-      [id]
-    );
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: authUserSelect
+    });
 
-    return result.rows[0] ?? null;
+    return user ? mapUserRecord(user) : null;
   }
 
   updatePasswordHash(userId: string, passwordHash: string) {
-    return queryCivicPlatform(
-      `
-        UPDATE public.users
-        SET
-          password = $2,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-      `,
-      [userId, passwordHash]
-    );
+    return prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash }
+    });
   }
 
   async createUser(data: {
@@ -124,84 +113,52 @@ export class AuthRepository {
     passwordHash: string;
     role: "CITIZEN" | "EMPLOYEE" | "DEPARTMENT_ADMIN";
   }) {
-    const normalizedRole =
-      data.role === UserRole.DEPARTMENT_ADMIN ? "ADMIN" : data.role;
-    const result = await queryCivicPlatform<AuthUserRecord>(
-      `
-        INSERT INTO public.users (
-          name,
-          email,
-          phone,
-          password,
-          role,
-          language,
-          status,
-          created_at,
-          updated_at,
-          profile_completed
-        )
-        VALUES ($1, $2, $3, $4, $5, 'en', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, false)
-        RETURNING ${authUserSelect}
-      `,
-      [
-        data.fullName.trim(),
-        data.email.trim().toLowerCase(),
-        data.phone?.trim() || null,
-        data.passwordHash,
-        normalizedRole
-      ]
-    );
+    const user = await prisma.user.create({
+      data: {
+        fullName: data.fullName.trim(),
+        email: data.email.trim().toLowerCase(),
+        phone: data.phone?.trim() || null,
+        passwordHash: data.passwordHash,
+        role: data.role
+      },
+      select: authUserSelect
+    });
 
-    return result.rows[0];
+    return mapUserRecord(user);
   }
 
   createRefreshToken(data: { userId: string; tokenHash: string; expiresAt: Date }) {
-    void data.expiresAt;
-
-    return queryCivicPlatform(
-      `
-        UPDATE public.users
-        SET
-          refresh_token_hash = $2,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-      `,
-      [data.userId, data.tokenHash]
-    );
+    return prisma.refreshToken.create({
+      data: {
+        userId: data.userId,
+        tokenHash: data.tokenHash,
+        expiresAt: data.expiresAt
+      }
+    });
   }
 
   async findRefreshToken(tokenHash: string) {
-    const result = await queryCivicPlatform<{
-      userId: string;
-      tokenHash: string;
-      expiresAt: Date;
-    }>(
-      `
-        SELECT
-          id AS "userId",
-          refresh_token_hash AS "tokenHash",
-          CURRENT_TIMESTAMP + INTERVAL '7 days' AS "expiresAt"
-        FROM public.users
-        WHERE refresh_token_hash = $1
-        LIMIT 1
-      `,
-      [tokenHash]
-    );
-
-    return result.rows[0] ?? null;
+    return prisma.refreshToken.findFirst({
+      where: {
+        tokenHash,
+        revokedAt: null,
+        expiresAt: {
+          gt: new Date()
+        }
+      }
+    });
   }
 
   revokeRefreshToken(id: string) {
-    return queryCivicPlatform(
-      `
-        UPDATE public.users
-        SET
-          refresh_token_hash = NULL,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-      `,
-      [id]
-    );
+    return prisma.refreshToken.updateMany({
+      where: {
+        userId: id,
+        revokedAt: null
+      },
+      data: {
+        revokedAt: new Date()
+      }
+    });
   }
 
   revokeActiveRefreshTokensByUserId(userId: string) {

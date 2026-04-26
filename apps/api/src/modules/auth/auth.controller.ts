@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { Prisma } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
 
 import { env } from "config/env";
@@ -52,13 +53,40 @@ const clearAuthCookies = (res: Response) => {
 
 export class AuthController {
   async register(req: Request, res: Response) {
-    const result = await authService.register(req.body);
-    setAuthCookies(res, result.accessToken, result.refreshToken);
+    const { fullName, email, password } = req.body;
 
-    return sendSuccess(res, StatusCodes.CREATED, {
-      message: "Registration successful",
-      data: result
-    });
+    try {
+      const result = await authService.register({ fullName, email, password });
+      setAuthCookies(res, result.accessToken, result.refreshToken);
+
+      return sendSuccess(res, StatusCodes.CREATED, {
+        message: "Registration successful",
+        data: result
+      });
+    } catch (error) {
+      console.error("Register error:", error);
+
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return res.status(StatusCodes.CONFLICT).json({
+          success: false,
+          message: "Email already registered"
+        });
+      }
+
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({
+          success: false,
+          message: error.message,
+          code: error.code,
+          details: error.details ?? null
+        });
+      }
+
+      return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: "Internal server error"
+      });
+    }
   }
 
   async login(req: Request, res: Response) {
