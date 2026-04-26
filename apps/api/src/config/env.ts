@@ -1,6 +1,10 @@
+import path from "node:path";
+
 import { config } from "dotenv";
 
-config();
+config({
+  path: path.resolve(__dirname, "../../.env")
+});
 
 const PLACEHOLDER_TOKENS = [
   "your_supabase_url",
@@ -115,18 +119,6 @@ if (!jwtSecretsConfigured) {
 
 if (!NODE_ENVS.has(rawNodeEnv)) {
   envValidationErrors.push("NODE_ENV must be one of: development, test, production.");
-}
-
-console.log("[startup] Environment loaded", {
-  nodeEnv,
-  hasDatabaseUrl: Boolean(rawDatabaseUrl),
-  hasRedisUrl: Boolean(rawRedisUrl),
-  databaseUrlValid: databaseUrlLooksValid,
-  redisUrlValid: redisUrlLooksValid
-});
-
-if (envValidationErrors.length) {
-  console.error("[startup] Environment validation failed", envValidationErrors);
 }
 
 export const env = {

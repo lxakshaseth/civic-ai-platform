@@ -5,6 +5,7 @@ import {
   civicPlatformPool,
   ensureCivicPlatformSchema
 } from "database/clients/civic-platform";
+import { prisma } from "database/clients/prisma";
 import { connectRedis } from "database/clients/redis";
 import { closeBullMqConnection } from "queues/connection";
 import { closeQueues } from "queues/queue.registry";
@@ -43,6 +44,15 @@ const bootstrap = async () => {
     }
   } else {
     logger.error("DATABASE_URL is missing, invalid, or contains a placeholder. Database features are disabled.");
+  }
+
+  if (env.DATABASE_URL_IS_VALID) {
+    try {
+      await prisma.$connect();
+      logger.info("Prisma connected successfully");
+    } catch (error) {
+      logger.error({ error }, "Prisma startup check failed. Prisma-backed endpoints may be unavailable.");
+    }
   }
 
   const app = createApp();
@@ -92,6 +102,10 @@ const bootstrap = async () => {
         });
       }
 
+      await prisma.$disconnect().catch((error) => {
+        logger.error({ error }, "Failed to disconnect Prisma cleanly");
+      });
+
       logger.info("Shutdown completed");
       process.exit(0);
     });
@@ -107,6 +121,8 @@ bootstrap().catch(async (error) => {
   if (civicPlatformPool) {
     await civicPlatformPool.end().catch(() => undefined);
   }
+
+  await prisma.$disconnect().catch(() => undefined);
 
   process.exit(1);
 });

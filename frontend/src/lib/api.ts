@@ -44,7 +44,7 @@ export class ApiError extends Error {
   }
 }
 
-const DEFAULT_API_BASE_URL = "http://localhost:4000/api/v1";
+const DEFAULT_API_BASE_URL = "http://localhost:4000/api";
 const AUTH_REFRESH_BUFFER_MS = 30_000;
 const AUTH_REFRESH_EXCLUDED_PATHS = new Set([
   "/auth/login",
@@ -56,11 +56,16 @@ const AUTH_REFRESH_EXCLUDED_PATHS = new Set([
 let refreshInFlight: Promise<string | null> | null = null;
 
 function getApiBaseUrl() {
-  return (
+  const configuredBaseUrl =
     process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "") ||
     process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, "") ||
-    DEFAULT_API_BASE_URL
-  );
+    DEFAULT_API_BASE_URL;
+
+  if (/\/api(?:\/v\d+)?$/i.test(configuredBaseUrl)) {
+    return configuredBaseUrl.replace(/\/api\/v\d+$/i, "/api");
+  }
+
+  return `${configuredBaseUrl}/api`;
 }
 
 function normalizeApiPath(path: string) {
