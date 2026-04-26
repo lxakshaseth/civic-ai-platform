@@ -220,13 +220,26 @@ export class AuthService {
   }
 
   private async buildAuthUser(user: AuthUserRecord): Promise<AuthResponseUser> {
-    const profile = await this.profileService.syncAuthUserProfile({
-      email: user.email,
-      name: user.fullName,
-      role: user.role,
-      phone: user.phone,
-      language: user.language ?? "en"
-    });
+    let profile: Awaited<ReturnType<ProfileService["syncAuthUserProfile"]>> | null = null;
+
+    try {
+      profile = await this.profileService.syncAuthUserProfile({
+        email: user.email,
+        name: user.fullName,
+        role: user.role,
+        phone: user.phone,
+        language: user.language ?? "en"
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          error,
+          userId: user.id,
+          email: user.email
+        },
+        "Profile sync failed during auth. Falling back to auth user payload."
+      );
+    }
 
     return {
       id: user.id,
@@ -234,10 +247,10 @@ export class AuthService {
       email: user.email,
       role: user.role,
       departmentId: user.departmentId,
-      gender: profile.gender || null,
-      language: profile.language || "en",
-      profileCompleted: profile.profile_completed,
-      showSanitaryFeature: profile.show_sanitary_feature
+      gender: profile?.gender || user.gender || null,
+      language: profile?.language || user.language || "en",
+      profileCompleted: profile?.profile_completed ?? user.profileCompleted,
+      showSanitaryFeature: profile?.show_sanitary_feature ?? Boolean(user.showSanitaryFeature)
     };
   }
 }
