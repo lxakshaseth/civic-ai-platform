@@ -91,7 +91,7 @@ model User {
   fullName          String
   email             String                @unique
   phone             String?               @unique
-  passwordHash      String
+  passwordHash      String                @map("password")
   role              UserRole              @default(CITIZEN)
   isActive          Boolean               @default(true)
   departmentId      String?
