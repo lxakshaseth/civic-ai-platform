@@ -10,6 +10,7 @@
     "dev": "tsx watch src/dev.ts",
     "build": "prisma generate && tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
     "start": "node dist/server.js",
+    "render:start": "npx prisma generate && npx prisma db push && npm run dev",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "prisma:generate": "prisma generate",
@@ -17,6 +18,9 @@
     "prisma:reset": "prisma db push --force-reset",
     "prisma:migrate": "prisma db push",
     "prisma:studio": "prisma studio"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
   },
   "dependencies": {
     "@prisma/client": "^6.5.0",

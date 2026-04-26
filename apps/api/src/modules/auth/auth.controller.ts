@@ -1,8 +1,10 @@
 import type { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import { StatusCodes } from "http-status-codes";
 
 import { env } from "config/env";
+import { prisma } from "database/clients/prisma";
 import { AppError } from "shared/errors/app-error";
 import { sendSuccess } from "utils/api-response";
 
@@ -56,20 +58,26 @@ export class AuthController {
     const { fullName, email, password } = req.body;
 
     try {
-      const result = await authService.register({ fullName, email, password });
-      setAuthCookies(res, result.accessToken, result.refreshToken);
+      const passwordHash = await bcrypt.hash(password, 10);
+      const user = await prisma.user.create({
+        data: {
+          fullName,
+          email: email.trim().toLowerCase(),
+          passwordHash
+        }
+      });
 
       return sendSuccess(res, StatusCodes.CREATED, {
         message: "Registration successful",
-        data: result
+        data: user
       });
     } catch (error) {
-      console.error("Register error:", error);
+      console.error("REGISTER ERROR:", error);
 
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        return res.status(StatusCodes.CONFLICT).json({
+        return res.status(StatusCodes.BAD_REQUEST).json({
           success: false,
-          message: "Email already registered"
+          message: "Email already exists"
         });
       }
 
