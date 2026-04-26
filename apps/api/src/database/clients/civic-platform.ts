@@ -8,17 +8,8 @@ const globalForCivicPlatform = globalThis as unknown as {
 };
 
 function resolveCivicPlatformDatabaseUrl() {
-  const employeeDirectoryUrl = env.EMPLOYEE_DIRECTORY_DATABASE_URL.trim();
-
-  if (employeeDirectoryUrl.startsWith("postgresql://")) {
-    return employeeDirectoryUrl;
-  }
-
-  if (env.DATABASE_URL_IS_VALID) {
-    return env.DATABASE_URL;
-  }
-
-  return "";
+  // 🔥 ALWAYS USE SAME DB AS PRISMA
+  return env.DATABASE_URL;
 }
 
 function resolveCivicPlatformPoolConfig(): PoolConfig | null {
