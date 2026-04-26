@@ -104,13 +104,55 @@ export default function AdminDashboard() {
   const user = useCurrentUser();
   const { data, error, loading } = useApiData(
     async () => {
-      const [summary, analytics, unassignedComplaints] = await Promise.all([
-        apiRequest<AdminSummary>("/admin/dashboard"),
-        apiRequest<AnalyticsDashboard>("/analytics/dashboard", {
-          query: { interval: "month", limit: 6 },
-        }),
-        apiRequest<UnassignedComplaint[]>("/complaints/unassigned"),
-      ]);
+      const [summaryResult, analyticsResult, unassignedResult] =
+        await Promise.allSettled([
+          apiRequest<AdminSummary>("/admin/dashboard"),
+          apiRequest<AnalyticsDashboard>("/analytics/dashboard", {
+            query: { interval: "month", limit: 6 },
+          }),
+          apiRequest<UnassignedComplaint[]>("/complaints/unassigned"),
+        ]);
+
+      const summary =
+        summaryResult.status === "fulfilled"
+          ? summaryResult.value
+          : {
+              totalUsers: 0,
+              totalCitizens: 0,
+              totalEmployees: 0,
+              totalAdmins: 0,
+              totalComplaints: 0,
+              resolvedComplaints: 0,
+              pendingComplaints: 0,
+              escalationsCount: 0,
+            };
+      const analytics =
+        analyticsResult.status === "fulfilled"
+          ? analyticsResult.value
+          : {
+              overview: {
+                averageResolutionHours: 0,
+                resolutionRate: 0,
+                totalComplaints: 0,
+                pendingCount: 0,
+                resolvedCount: 0,
+                closedCount: 0,
+                openCount: 0,
+                inProgressCount: 0,
+              },
+              trends: [],
+              byDepartment: [],
+              departmentLeaderboard: [],
+              satisfaction: {
+                averageRating: 0,
+                totalRatings: 0,
+              },
+              cityHealth: {
+                cityScore: 0,
+              },
+            };
+      const unassignedComplaints =
+        unassignedResult.status === "fulfilled" ? unassignedResult.value : [];
 
       return { summary, analytics, unassignedComplaints };
     },

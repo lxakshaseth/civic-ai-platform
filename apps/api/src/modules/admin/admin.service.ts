@@ -2,6 +2,7 @@ import { UserRole } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
 
 import { queryCivicPlatform } from "database/clients/civic-platform";
+import { prisma } from "database/clients/prisma";
 import { ComplaintsService } from "modules/complaint/complaint.service";
 import { EmployeesService } from "modules/employee/employees.service";
 import { AppError } from "shared/errors/app-error";
@@ -80,58 +81,57 @@ export class AdminService {
   }
 
   async getDashboard() {
-    const [complaintStats, userStats, escalationStats] = await Promise.all([
-      queryCivicPlatform<{
-        totalComplaints: string;
-        resolvedComplaints: string;
-        pendingComplaints: string;
-      }>(
-        `
-          SELECT
-            COUNT(*)::text AS "totalComplaints",
-            COUNT(*) FILTER (
-              WHERE UPPER(COALESCE(status, 'OPEN')) IN ('RESOLVED', 'CLOSED')
-            )::text AS "resolvedComplaints",
-            COUNT(*) FILTER (
-              WHERE UPPER(COALESCE(status, 'OPEN')) NOT IN ('RESOLVED', 'CLOSED')
-            )::text AS "pendingComplaints"
-          FROM public.complaints
-        `
-      ),
-      queryCivicPlatform<{
-        totalUsers: string;
-        totalCitizens: string;
-        totalEmployees: string;
-        totalAdmins: string;
-      }>(
-        `
-          SELECT
-            COUNT(*)::text AS "totalUsers",
-            COUNT(*) FILTER (WHERE UPPER(COALESCE(role, '')) = 'CITIZEN')::text AS "totalCitizens",
-            COUNT(*) FILTER (WHERE UPPER(COALESCE(role, '')) = 'EMPLOYEE')::text AS "totalEmployees",
-            COUNT(*) FILTER (
-              WHERE UPPER(COALESCE(role, '')) IN ('DEPARTMENT_ADMIN', 'SUPER_ADMIN')
-            )::text AS "totalAdmins"
-          FROM public.users
-        `
-      ),
-      queryCivicPlatform<{ escalationsCount: string }>(
-        `
-          SELECT COUNT(*)::text AS "escalationsCount"
-          FROM public.escalations
-        `
-      )
+    const [
+      totalUsers,
+      totalCitizens,
+      totalEmployees,
+      totalAdmins,
+      totalComplaints,
+      resolvedComplaints,
+      pendingComplaints,
+      escalationsCount
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { role: UserRole.CITIZEN } }),
+      prisma.user.count({ where: { role: UserRole.EMPLOYEE } }),
+      prisma.user.count({
+        where: {
+          role: {
+            in: [UserRole.DEPARTMENT_ADMIN, UserRole.SUPER_ADMIN]
+          }
+        }
+      }),
+      prisma.complaint.count(),
+      prisma.complaint.count({
+        where: {
+          status: {
+            in: ["RESOLVED", "CLOSED"]
+          }
+        }
+      }),
+      prisma.complaint.count({
+        where: {
+          status: {
+            notIn: ["RESOLVED", "CLOSED"]
+          }
+        }
+      }),
+      prisma.ticket.count({
+        where: {
+          status: "PENDING"
+        }
+      })
     ]);
 
     return {
-      totalUsers: Number(userStats.rows[0]?.totalUsers ?? 0),
-      totalCitizens: Number(userStats.rows[0]?.totalCitizens ?? 0),
-      totalEmployees: Number(userStats.rows[0]?.totalEmployees ?? 0),
-      totalAdmins: Number(userStats.rows[0]?.totalAdmins ?? 0),
-      totalComplaints: Number(complaintStats.rows[0]?.totalComplaints ?? 0),
-      resolvedComplaints: Number(complaintStats.rows[0]?.resolvedComplaints ?? 0),
-      pendingComplaints: Number(complaintStats.rows[0]?.pendingComplaints ?? 0),
-      escalationsCount: Number(escalationStats.rows[0]?.escalationsCount ?? 0)
+      totalUsers,
+      totalCitizens,
+      totalEmployees,
+      totalAdmins,
+      totalComplaints,
+      resolvedComplaints,
+      pendingComplaints,
+      escalationsCount
     };
   }
 

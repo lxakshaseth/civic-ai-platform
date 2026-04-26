@@ -14,6 +14,11 @@ import { logger } from "utils/logger";
 import { toPublicUploadPath } from "utils/uploads";
 
 import {
+  ComplaintsRepository,
+  type ComplaintListRecord,
+  type ComplaintRecord
+} from "./complaint.repository";
+import {
   analyzeComplaintDraft,
   buildFullAddress,
   derivePriorityFromUrgency,
@@ -523,6 +528,10 @@ async function getUserSummary(userId: string) {
 }
 
 export class ComplaintsService {
+  constructor(
+    private readonly complaintsRepository: ComplaintsRepository = new ComplaintsRepository()
+  ) {}
+
   analyzeComplaintDraft(input: Pick<CreateComplaintInput, "title" | "description">) {
     return analyzeComplaintDraft({
       title: input.title,
@@ -1347,44 +1356,252 @@ export class ComplaintsService {
       `);
     }
 
-    const result = await queryCivicPlatform<ComplaintRow>(
-      `
-        SELECT ${baseComplaintSelect}
-        FROM public.complaints c
-        LEFT JOIN public.users citizen
-          ON citizen.id = c.citizen_id
-        LEFT JOIN public.users employee
-          ON employee.id = c.assigned_employee_id
-        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY c.created_at DESC NULLS LAST, c.id DESC
-      `,
-      params
-    );
+    try {
+      const result = await queryCivicPlatform<ComplaintRow>(
+        `
+          SELECT ${baseComplaintSelect}
+          FROM public.complaints c
+          LEFT JOIN public.users citizen
+            ON citizen.id = c.citizen_id
+          LEFT JOIN public.users employee
+            ON employee.id = c.assigned_employee_id
+          ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+          ORDER BY c.created_at DESC NULLS LAST, c.id DESC
+        `,
+        params
+      );
 
-    return this.mapComplaintRows(result.rows, actor);
+      return this.mapComplaintRows(result.rows, actor);
+    } catch (error) {
+      logger.warn(
+        {
+          error,
+          actorId: actor.id,
+          actorRole: actor.role
+        },
+        "Legacy complaint query failed. Falling back to Prisma complaint reads."
+      );
+
+      const complaints = await this.complaintsRepository.listMany(
+        this.buildPrismaComplaintWhere(actor, filters)
+      );
+      return complaints.map((complaint) => this.mapPrismaComplaintListRecord(complaint, actor));
+    }
   }
 
   private async getComplaintDtoOrThrow(id: string, actor: Actor) {
-    const result = await queryCivicPlatform<ComplaintRow>(
-      `
-        SELECT ${baseComplaintSelect}
-        FROM public.complaints c
-        LEFT JOIN public.users citizen
-          ON citizen.id = c.citizen_id
-        LEFT JOIN public.users employee
-          ON employee.id = c.assigned_employee_id
-        WHERE c.id = $1
-        LIMIT 1
-      `,
-      [id]
-    );
+    try {
+      const result = await queryCivicPlatform<ComplaintRow>(
+        `
+          SELECT ${baseComplaintSelect}
+          FROM public.complaints c
+          LEFT JOIN public.users citizen
+            ON citizen.id = c.citizen_id
+          LEFT JOIN public.users employee
+            ON employee.id = c.assigned_employee_id
+          WHERE c.id = $1
+          LIMIT 1
+        `,
+        [id]
+      );
 
-    if (!result.rows[0]) {
-      throw new AppError("Complaint not found", StatusCodes.NOT_FOUND, "COMPLAINT_NOT_FOUND");
+      if (!result.rows[0]) {
+        throw new AppError("Complaint not found", StatusCodes.NOT_FOUND, "COMPLAINT_NOT_FOUND");
+      }
+
+      const complaints = await this.mapComplaintRows([result.rows[0]], actor);
+      return complaints[0];
+    } catch (error) {
+      logger.warn(
+        {
+          error,
+          complaintId: id,
+          actorId: actor.id
+        },
+        "Legacy complaint detail query failed. Falling back to Prisma complaint detail."
+      );
+
+      const complaint = await this.complaintsRepository.findById(id);
+
+      if (!complaint) {
+        throw new AppError("Complaint not found", StatusCodes.NOT_FOUND, "COMPLAINT_NOT_FOUND");
+      }
+
+      return this.mapPrismaComplaintRecord(complaint, actor);
+    }
+  }
+
+  private buildPrismaComplaintWhere(
+    actor: Actor,
+    filters: {
+      status?: string;
+      departmentId?: string;
+      assignedEmployeeId?: string;
+      citizenId?: string;
+      pincode?: string;
+      mine?: boolean;
+      category?: string;
+      priority?: string;
+      search?: string;
+    }
+  ) {
+    const where: Record<string, unknown> = {};
+
+    if (actor.role === UserRole.EMPLOYEE) {
+      where.assignedEmployeeId = actor.id;
+    } else if (actor.role === UserRole.CITIZEN && filters.mine) {
+      where.citizenId = actor.id;
     }
 
-    const complaints = await this.mapComplaintRows([result.rows[0]], actor);
-    return complaints[0];
+    if (filters.status?.trim()) {
+      where.status = normalizeInternalStatus(filters.status);
+    }
+
+    if (filters.assignedEmployeeId) {
+      where.assignedEmployeeId = filters.assignedEmployeeId;
+    }
+
+    if (filters.citizenId && actor.role !== UserRole.CITIZEN) {
+      where.citizenId = filters.citizenId;
+    }
+
+    if (filters.category?.trim()) {
+      where.category = filters.category.trim();
+    }
+
+    if (filters.priority?.trim()) {
+      where.priority = filters.priority.trim().toUpperCase();
+    }
+
+    if (filters.departmentId?.trim()) {
+      where.departmentId = filters.departmentId.trim();
+    }
+
+    if (filters.search?.trim()) {
+      where.OR = [
+        { title: { contains: filters.search.trim(), mode: "insensitive" } },
+        { description: { contains: filters.search.trim(), mode: "insensitive" } },
+        { category: { contains: filters.search.trim(), mode: "insensitive" } },
+        { locationAddress: { contains: filters.search.trim(), mode: "insensitive" } }
+      ];
+    }
+
+    return where;
+  }
+
+  private mapPrismaComplaintListRecord(complaint: ComplaintListRecord, actor: Actor) {
+    const internalStatus = normalizeInternalStatus(complaint.status);
+    const beforeImage = complaint.imagePath ? toPublicUploadPath(complaint.imagePath) : "";
+    const isOwner = complaint.citizenId === actor.id;
+
+    return {
+      id: complaint.id,
+      title: complaint.title?.trim() || "Untitled complaint",
+      issueType: complaint.category?.trim() || complaint.aiCategory?.trim() || "General civic issue",
+      urgencyScore: complaint.aiConfidence ? Math.round(complaint.aiConfidence * 100) : 68,
+      tags: sanitizeTags([complaint.category, complaint.department?.name]),
+      structuredAddress: null,
+      category: complaint.category?.trim() || "Other",
+      department: complaint.department?.name?.trim() || "Unassigned",
+      area: deriveArea(complaint.locationAddress, null),
+      address: complaint.locationAddress?.trim() || "Location unavailable",
+      pincode: "",
+      status: toFriendlyStatus(internalStatus),
+      internalStatus,
+      priority: normalizePriority(complaint.priority),
+      createdAt: complaint.createdAt.toISOString(),
+      submittedAt: complaint.createdAt.toISOString().slice(0, 10),
+      resolvedAt: complaint.closedAt?.toISOString() ?? complaint.resolvedAt?.toISOString() ?? undefined,
+      sentimentScore: 78,
+      aiUrgency: complaint.aiConfidence ? Math.round(complaint.aiConfidence * 100) : 68,
+      rating: complaint.feedback?.rating ?? undefined,
+      feedbackComment: complaint.feedback?.comment ?? null,
+      citizen: actor.role === UserRole.CITIZEN && !isOwner ? "Citizen" : complaint.citizen.fullName,
+      createdBy: actor.role === UserRole.CITIZEN && !isOwner ? "Citizen" : complaint.citizen.fullName,
+      createdByUserId: complaint.citizenId,
+      viewerIsComplaintOwner: isOwner,
+      lat: complaint.latitude ? Number(complaint.latitude) : 0,
+      lng: complaint.longitude ? Number(complaint.longitude) : 0,
+      description: complaint.description?.trim() || "",
+      beforeImage,
+      citizenImages: beforeImage ? [beforeImage] : [],
+      hasOriginalBeforeImage: Boolean(beforeImage),
+      afterImage: undefined,
+      assignedTo: complaint.assignedEmployeeId,
+      assignedEmployeeName: complaint.assignedEmployee?.fullName ?? null,
+      assignedEmployeeDepartment: complaint.assignedEmployee?.departmentId ?? null,
+      assignedEmployeeInfo:
+        complaint.assignedEmployeeId && complaint.assignedEmployee
+          ? {
+              id: complaint.assignedEmployeeId,
+              name: complaint.assignedEmployee.fullName,
+              department: complaint.department?.name ?? null,
+              workStatus: toWorkStatus(internalStatus)
+            }
+          : null,
+      assignedEmployeeStatus: toWorkStatus(internalStatus),
+      locationSummary: deriveArea(complaint.locationAddress, null),
+      proof: complaint._count.evidenceItems
+        ? {
+            beforeImages: beforeImage ? [beforeImage] : [],
+            afterImages: [],
+            notes: "",
+            submittedAt: complaint.updatedAt.toISOString(),
+            workSummary: null,
+            items: [],
+            documents: []
+          }
+        : null,
+      rejectionReason: null,
+      aiSuggestion: {
+        category: complaint.category?.trim() || "Other",
+        department: complaint.department?.name?.trim() || "Unassigned",
+        label: `${complaint.category?.trim() || "Other"} • ${complaint.department?.name?.trim() || "Unassigned"}`
+      }
+    };
+  }
+
+  private mapPrismaComplaintRecord(complaint: ComplaintRecord, actor: Actor) {
+    const mappedComplaint = this.mapPrismaComplaintListRecord(complaint as unknown as ComplaintListRecord, actor);
+    const beforeImages = complaint.evidenceItems
+      .filter((item) => item.type === "BEFORE")
+      .map((item) => toPublicUploadPath(item.filePath))
+      .filter(Boolean);
+    const afterImages = complaint.evidenceItems
+      .filter((item) => item.type === "AFTER")
+      .map((item) => toPublicUploadPath(item.filePath))
+      .filter(Boolean);
+    const documents = complaint.evidenceItems
+      .filter((item) => item.type === "INVOICE")
+      .map((item) => ({
+        id: item.id,
+        url: toPublicUploadPath(item.filePath),
+        label: item.fileName,
+        kind: item.mimeType.toLowerCase().startsWith("image/") ? "image" : "document",
+        type: item.type,
+        uploadedAt: item.createdAt.toISOString(),
+        note: item.note ?? undefined,
+        mimeType: item.mimeType,
+        verificationStatus: item.verificationStatus ?? null,
+        uploadedByName: item.uploadedBy.fullName
+      }));
+
+    return {
+      ...mappedComplaint,
+      proof: complaint.evidenceItems.length
+        ? {
+            beforeImages,
+            afterImages,
+            notes: complaint.evidenceItems[0]?.note ?? "",
+            invoice: documents[0]?.url,
+            submittedAt: complaint.evidenceItems[0]?.createdAt.toISOString() ?? complaint.updatedAt.toISOString(),
+            workSummary: null,
+            items: documents,
+            documents
+          }
+        : null,
+      rejectionReason: complaint.status === "REJECTED" ? "Rejected" : null
+    };
   }
 
   private async mapComplaintRows(rows: ComplaintRow[], actor: Actor) {

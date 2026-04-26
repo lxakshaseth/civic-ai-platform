@@ -2,6 +2,7 @@ import { UserRole } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
 
 import { queryCivicPlatform } from "database/clients/civic-platform";
+import { prisma } from "database/clients/prisma";
 import { aiClient } from "integrations/ai/ai.client";
 import { ComplaintsService } from "modules/complaint/complaint.service";
 import { ProfileRepository } from "modules/profile/profile.repository";
@@ -111,54 +112,53 @@ export class EmployeePortalService {
       this.listEmployeeTasks(actor, {
         limit: options.limit ?? 4
       }),
-      queryCivicPlatform<{ count: string }>(
-        `
-          SELECT COUNT(*)::text AS count
-          FROM public.tickets ticket
-          INNER JOIN public.complaints complaint
-            ON complaint.id = ticket.complaint_id
-          WHERE complaint.assigned_employee_id = $1
-            AND UPPER(COALESCE(ticket.status, 'PENDING')) = 'PENDING'
-        `,
-        [actor.id]
-      ),
-      queryCivicPlatform<{ count: string }>(
-        `
-          SELECT COUNT(*)::text AS count
-          FROM public.notifications
-          WHERE user_id = $1
-            AND COALESCE(is_read, false) = false
-        `,
-        [actor.id]
-      ),
-      queryCivicPlatform<{
-        totalAssigned: string;
-        completed: string;
-        pending: string;
-      }>(
-        `
-          SELECT
-            COUNT(*)::text AS "totalAssigned",
-            COUNT(*) FILTER (
-              WHERE UPPER(COALESCE(status, 'OPEN')) IN ('RESOLVED', 'CLOSED')
-            )::text AS completed,
-            COUNT(*) FILTER (
-              WHERE UPPER(COALESCE(status, 'OPEN')) NOT IN ('RESOLVED', 'CLOSED')
-            )::text AS pending
-          FROM public.complaints
-          WHERE assigned_employee_id = $1
-        `,
-        [actor.id]
-      )
+      prisma.ticket.count({
+        where: {
+          complaint: {
+            assignedEmployeeId: actor.id
+          },
+          status: "PENDING"
+        }
+      }),
+      prisma.notification.count({
+        where: {
+          userId: actor.id,
+          readAt: null
+        }
+      }),
+      Promise.all([
+        prisma.complaint.count({
+          where: {
+            assignedEmployeeId: actor.id
+          }
+        }),
+        prisma.complaint.count({
+          where: {
+            assignedEmployeeId: actor.id,
+            status: {
+              in: ["RESOLVED", "CLOSED"]
+            }
+          }
+        }),
+        prisma.complaint.count({
+          where: {
+            assignedEmployeeId: actor.id,
+            status: {
+              notIn: ["RESOLVED", "CLOSED"]
+            }
+          }
+        })
+      ])
     ]);
+    const [totalAssigned, completed, pending] = complaintStats;
 
     return {
       summary: {
-        totalAssignedTasks: Number(complaintStats.rows[0]?.totalAssigned ?? 0),
-        completedTasks: Number(complaintStats.rows[0]?.completed ?? 0),
-        pendingTasks: Number(complaintStats.rows[0]?.pending ?? 0),
-        escalatedTickets: Number(ticketStats.rows[0]?.count ?? 0),
-        unreadNotifications: Number(notificationStats.rows[0]?.count ?? 0)
+        totalAssignedTasks: totalAssigned,
+        completedTasks: completed,
+        pendingTasks: pending,
+        escalatedTickets: ticketStats,
+        unreadNotifications: notificationStats
       },
       recentTasks: tasks.items,
       filters: tasks.filters
@@ -377,32 +377,25 @@ export class EmployeePortalService {
     await this.assertEmployee(actor);
 
     const weeks = options.weeks ?? 6;
-    const result = await queryCivicPlatform<{
-      id: string;
-      status: string | null;
-      createdAt: string;
-      resolvedAt: string | null;
-      closedAt: string | null;
-      rating: number | null;
-    }>(
-      `
-        SELECT
-          c.id,
-          c.status,
-          c.created_at::text AS "createdAt",
-          c.resolved_at::text AS "resolvedAt",
-          c.closed_at::text AS "closedAt",
-          r.rating
-        FROM public.complaints c
-        LEFT JOIN public.ratings r
-          ON r.complaint_id = c.id
-        WHERE c.assigned_employee_id = $1
-      `,
-      [actor.id]
-    );
-
-    const complaints = result.rows.map((row) => ({
+    const complaints = (await prisma.complaint.findMany({
+      where: {
+        assignedEmployeeId: actor.id
+      },
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        resolvedAt: true,
+        closedAt: true,
+        feedback: {
+          select: {
+            rating: true
+          }
+        }
+      }
+    })).map((row) => ({
       ...row,
+      rating: row.feedback?.rating ?? null,
       createdAtDate: new Date(row.createdAt),
       endedAtDate: row.closedAt ? new Date(row.closedAt) : row.resolvedAt ? new Date(row.resolvedAt) : null,
       internalStatus: row.status?.trim().toUpperCase() || "OPEN"
@@ -505,31 +498,26 @@ export class EmployeePortalService {
   }
 
   private async assertEmployee(actor: EmployeeActor) {
-    const result = await queryCivicPlatform<{
-      id: string;
-      role: string | null;
-      status: string | null;
-    }>(
-      `
-        SELECT id, role, status
-        FROM public.users
-        WHERE id = $1
-        LIMIT 1
-      `,
-      [actor.id]
-    );
-
-    const profile = result.rows[0];
+    const profile = await prisma.user.findUnique({
+      where: {
+        id: actor.id
+      },
+      select: {
+        id: true,
+        role: true,
+        isActive: true
+      }
+    });
 
     if (!profile) {
       throw new AppError("User not found", StatusCodes.NOT_FOUND, "USER_NOT_FOUND");
     }
 
-    if ((profile.role ?? "").trim().toUpperCase() !== UserRole.EMPLOYEE) {
+    if (profile.role !== UserRole.EMPLOYEE) {
       throw new AppError("Forbidden", StatusCodes.FORBIDDEN, "FORBIDDEN");
     }
 
-    if (["INACTIVE", "DISABLED", "TERMINATED", "BLOCKED"].includes((profile.status ?? "").trim().toUpperCase())) {
+    if (!profile.isActive) {
       throw new AppError("Employee account is inactive", StatusCodes.FORBIDDEN, "USER_INACTIVE");
     }
   }

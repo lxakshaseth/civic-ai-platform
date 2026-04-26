@@ -67,13 +67,38 @@ export default function PublicDashboard() {
   const user = useCurrentUser();
   const { data, error, loading } = useApiData(
     async () => {
-      const [complaints, notificationStats, publicSummary] = await Promise.all([
-        apiRequest<CitizenComplaint[]>("/complaints", {
-          query: { mine: true },
-        }),
-        apiRequest<NotificationStats>("/notifications/stats"),
-        apiRequest<PublicSummary>("/analytics/public/summary"),
-      ]);
+      const [complaintsResult, notificationStatsResult, publicSummaryResult] =
+        await Promise.allSettled([
+          apiRequest<CitizenComplaint[]>("/complaints", {
+            query: { mine: true },
+          }),
+          apiRequest<NotificationStats>("/notifications/stats"),
+          apiRequest<PublicSummary>("/analytics/public/summary"),
+        ]);
+
+      const complaints =
+        complaintsResult.status === "fulfilled" ? complaintsResult.value : [];
+      const notificationStats =
+        notificationStatsResult.status === "fulfilled"
+          ? notificationStatsResult.value
+          : { total: 0, unread: 0, read: 0 };
+      const publicSummary =
+        publicSummaryResult.status === "fulfilled"
+          ? publicSummaryResult.value
+          : {
+              cards: {
+                totalComplaints: 0,
+                openCount: 0,
+                inProgressCount: 0,
+                resolvedCount: 0,
+                rejectedCount: 0,
+                reopenedCount: 0,
+                averageResolutionHours: 0,
+              },
+              citySummary: {
+                cityScore: 0,
+              },
+            };
 
       const counts = complaints.reduce(
         (summary, complaint) => {

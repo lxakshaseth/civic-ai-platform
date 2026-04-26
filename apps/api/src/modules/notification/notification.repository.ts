@@ -1,6 +1,5 @@
-import { NotificationType } from "@prisma/client";
-
-import { queryCivicPlatform } from "database/clients/civic-platform";
+import { NotificationType, Prisma } from "@prisma/client";
+import { prisma } from "database/clients/prisma";
 
 export interface NotificationRecord {
   id: string;
@@ -23,140 +22,113 @@ export class NotificationsRepository {
     message: string;
     data?: Record<string, unknown>;
   }) {
-    const result = await queryCivicPlatform<NotificationRecord>(
-      `
-        INSERT INTO public.notifications (
-          user_id,
-          complaint_id,
-          type,
-          title,
-          message,
-          data,
-          is_read,
-          created_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, false, CURRENT_TIMESTAMP)
-        RETURNING
-          id,
-          user_id AS "userId",
-          complaint_id AS "complaintId",
-          type,
-          title,
-          message,
-          data,
-          is_read AS "isRead",
-          created_at::text AS "createdAt"
-      `,
-      [
-        data.userId,
-        data.complaintId ?? null,
-        data.type,
-        data.title.trim(),
-        data.message.trim(),
-        data.data ? JSON.stringify(data.data) : null
-      ]
-    );
+    const notification = await prisma.notification.create({
+      data: {
+        userId: data.userId,
+        complaintId: data.complaintId ?? null,
+        type: data.type as NotificationType,
+        title: data.title.trim(),
+        message: data.message.trim(),
+        data: (data.data as Prisma.InputJsonValue | undefined) ?? undefined
+      }
+    });
 
-    return result.rows[0];
+    return {
+      id: notification.id,
+      userId: notification.userId,
+      complaintId: notification.complaintId,
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      data: (notification.data as Record<string, unknown> | null) ?? null,
+      isRead: Boolean(notification.readAt),
+      createdAt: notification.createdAt.toISOString()
+    };
   }
 
   async listByUser(userId: string, options?: { unreadOnly?: boolean; limit?: number }) {
-    const params: unknown[] = [userId];
-    const where = [`user_id = $1`];
+    const notifications = await prisma.notification.findMany({
+      where: {
+        userId,
+        ...(options?.unreadOnly ? { readAt: null } : {})
+      },
+      orderBy: { createdAt: "desc" },
+      take: options?.limit
+    });
 
-    if (options?.unreadOnly) {
-      where.push("COALESCE(is_read, false) = false");
-    }
-
-    if (options?.limit) {
-      params.push(options.limit);
-    }
-
-    const result = await queryCivicPlatform<NotificationRecord>(
-      `
-        SELECT
-          id,
-          user_id AS "userId",
-          complaint_id AS "complaintId",
-          type,
-          title,
-          message,
-          data,
-          COALESCE(is_read, false) AS "isRead",
-          created_at::text AS "createdAt"
-        FROM public.notifications
-        WHERE ${where.join(" AND ")}
-        ORDER BY created_at DESC NULLS LAST, id DESC
-        ${options?.limit ? `LIMIT $${params.length}` : ""}
-      `,
-      params
-    );
-
-    return result.rows;
+    return notifications.map((notification) => ({
+      id: notification.id,
+      userId: notification.userId,
+      complaintId: notification.complaintId,
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      data: (notification.data as Record<string, unknown> | null) ?? null,
+      isRead: Boolean(notification.readAt),
+      createdAt: notification.createdAt.toISOString()
+    }));
   }
 
   async markAsRead(id: string, userId: string) {
-    const result = await queryCivicPlatform<NotificationRecord>(
-      `
-        UPDATE public.notifications
-        SET is_read = true
-        WHERE id = $1
-          AND user_id = $2
-        RETURNING
-          id,
-          user_id AS "userId",
-          complaint_id AS "complaintId",
-          type,
-          title,
-          message,
-          data,
-          COALESCE(is_read, false) AS "isRead",
-          created_at::text AS "createdAt"
-      `,
-      [id, userId]
-    );
+    const existingNotification = await prisma.notification.findFirst({
+      where: {
+        id,
+        userId
+      }
+    });
 
-    return result.rows[0] ?? null;
+    if (!existingNotification) {
+      return null;
+    }
+
+    const notification = await prisma.notification.update({
+      where: { id: existingNotification.id },
+      data: {
+        readAt: existingNotification.readAt ?? new Date()
+      }
+    });
+
+    return {
+      id: notification.id,
+      userId: notification.userId,
+      complaintId: notification.complaintId,
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      data: (notification.data as Record<string, unknown> | null) ?? null,
+      isRead: Boolean(notification.readAt),
+      createdAt: notification.createdAt.toISOString()
+    };
   }
 
   async markAllAsRead(userId: string) {
-    const result = await queryCivicPlatform<{ count: string }>(
-      `
-        WITH updated AS (
-          UPDATE public.notifications
-          SET is_read = true
-          WHERE user_id = $1
-            AND COALESCE(is_read, false) = false
-          RETURNING id
-        )
-        SELECT COUNT(*)::text AS count
-        FROM updated
-      `,
-      [userId]
-    );
+    const result = await prisma.notification.updateMany({
+      where: {
+        userId,
+        readAt: null
+      },
+      data: {
+        readAt: new Date()
+      }
+    });
 
     return {
-      count: Number(result.rows[0]?.count ?? 0)
+      count: result.count
     };
   }
 
   async getStats(userId: string) {
-    const result = await queryCivicPlatform<{
-      total: string;
-      unread: string;
-    }>(
-      `
-        SELECT
-          COUNT(*)::text AS total,
-          COUNT(*) FILTER (WHERE COALESCE(is_read, false) = false)::text AS unread
-        FROM public.notifications
-        WHERE user_id = $1
-      `,
-      [userId]
-    );
-
-    const total = Number(result.rows[0]?.total ?? 0);
-    const unread = Number(result.rows[0]?.unread ?? 0);
+    const [total, unread] = await Promise.all([
+      prisma.notification.count({
+        where: { userId }
+      }),
+      prisma.notification.count({
+        where: {
+          userId,
+          readAt: null
+        }
+      })
+    ]);
 
     return {
       total,

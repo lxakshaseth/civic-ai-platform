@@ -58,10 +58,35 @@ export default function EmployeeDashboard() {
   const user = useCurrentUser();
   const { data, error, loading } = useApiData(
     async () => {
-      const [dashboard, performance] = await Promise.all([
+      const [dashboardResult, performanceResult] = await Promise.allSettled([
         apiRequest<EmployeeDashboardData>("/employee/dashboard"),
         apiRequest<EmployeePerformanceData>("/employee/performance"),
       ]);
+
+      const dashboard =
+        dashboardResult.status === "fulfilled"
+          ? dashboardResult.value
+          : {
+              summary: {
+                totalAssignedTasks: 0,
+                completedTasks: 0,
+                pendingTasks: 0,
+                escalatedTickets: 0,
+                unreadNotifications: 0,
+              },
+              recentTasks: [],
+            };
+      const performance =
+        performanceResult.status === "fulfilled"
+          ? performanceResult.value
+          : {
+              summary: {
+                totalTasksCompleted: 0,
+                rating: 0,
+                completionRate: 0,
+                totalAssigned: 0,
+              },
+            };
 
       return { dashboard, performance };
     },
