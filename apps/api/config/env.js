@@ -1,6 +1,11 @@
 const path = require('path')
 
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') })
+// ✅ Load .env ONLY in local development
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config({
+    path: path.resolve(__dirname, '..', '.env')
+  })
+}
 
 const REQUIRED_ENV_VARS = ['DATABASE_URL', 'REDIS_URL']
 
@@ -20,19 +25,12 @@ function getEnv(name, options = {}) {
 }
 
 function parseBoolean(value, defaultValue = false) {
-  if (typeof value !== 'string') {
-    return defaultValue
-  }
+  if (typeof value !== 'string') return defaultValue
 
   const normalized = value.trim().toLowerCase()
 
-  if (['true', '1', 'yes', 'on'].includes(normalized)) {
-    return true
-  }
-
-  if (['false', '0', 'no', 'off'].includes(normalized)) {
-    return false
-  }
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false
 
   return defaultValue
 }
@@ -43,9 +41,7 @@ function parseNumber(value, defaultValue) {
 }
 
 function parseOrigins(value) {
-  if (typeof value !== 'string') {
-    return []
-  }
+  if (typeof value !== 'string') return []
 
   return value
     .split(',')
@@ -64,11 +60,14 @@ function validateServerEnv() {
   }
 }
 
+// ✅ DEBUG (remove later)
+console.log("ENV CHECK → DATABASE_URL:", process.env.DATABASE_URL ? "FOUND" : "MISSING")
+
 module.exports = {
   REQUIRED_ENV_VARS,
   getEnv,
   parseBoolean,
   parseNumber,
   parseOrigins,
-  validateServerEnv,
+  validateServerEnv
 }
