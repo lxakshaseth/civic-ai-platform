@@ -72,14 +72,13 @@ const bootstrap = async () => {
 
     // 🗄 PostgreSQL (raw pool)
     if (civicPlatformPool) {
-      try {
-        await civicPlatformPool.query("SELECT 1");
-        await ensureCivicPlatformSchema();
-        logger.info("PostgreSQL connected (pool)");
-      } catch (error) {
-        logger.error({ error }, "PostgreSQL pool failed");
-      }
-    }
+  try {
+    await civicPlatformPool.query("SELECT 1");
+    logger.info("PostgreSQL pool connected ✅");
+  } catch (error) {
+    logger.error({ error }, "PostgreSQL pool failed ❌");
+  }
+}
 
     // 🔥 Prisma (CRITICAL)
     try {
