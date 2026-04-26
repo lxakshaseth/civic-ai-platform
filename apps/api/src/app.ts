@@ -15,12 +15,15 @@ import { apiRouter } from "routes/index";
 export const createApp = () => {
   const app = express();
 
+  // 🌐 CORS
   app.use(
     cors({
       origin: appConfig.corsOrigins,
       credentials: true
     })
   );
+
+  // 🔒 Security
   app.use(
     helmet({
       contentSecurityPolicy: false,
@@ -30,10 +33,16 @@ export const createApp = () => {
       frameguard: false
     })
   );
+
+  // 🧠 Parsers
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
+
+  // 📜 Logger
   app.use(requestLoggerMiddleware);
+
+  // 🚦 Rate limiter
   app.use(
     rateLimit({
       windowMs: env.RATE_LIMIT_WINDOW_MS,
@@ -43,6 +52,8 @@ export const createApp = () => {
       skip: (req) => env.NODE_ENV !== "production" && req.path.endsWith("/auth/me")
     })
   );
+
+  // 📁 Uploads static
   app.use("/uploads", (_req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
@@ -52,10 +63,38 @@ export const createApp = () => {
     );
     next();
   });
+
   app.use("/uploads", express.static(uploadConfig.uploadsRoot));
 
+  // =========================================
+  // ✅ ADD THIS (ROOT ROUTE)
+  // =========================================
+  app.get("/", (_req, res) => {
+    res.json({
+      success: true,
+      message: "🚀 Civic AI Backend Running"
+    });
+  });
+
+  // =========================================
+  // ✅ OPTIONAL (HEALTH CHECK - useful for Render)
+  // =========================================
+  app.get("/health", (_req, res) => {
+    res.status(200).json({
+      success: true,
+      status: "OK"
+    });
+  });
+
+  // =========================================
+  // 🔗 API ROUTES
+  // =========================================
   app.use(appConfig.apiPrefix, apiRouter);
+
+  // ❌ Not found
   app.use(notFoundMiddleware);
+
+  // ⚠️ Error handler
   app.use(errorMiddleware);
 
   return app;
