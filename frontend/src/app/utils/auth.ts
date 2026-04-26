@@ -65,13 +65,15 @@ export function getAccessToken() {
 
 export async function loginUser(input: LoginInput) {
   try {
+    const requestBody = {
+      email: input.email.trim(),
+      password: input.password,
+      role: mapPortalRoleToApiRole(input.role),
+    };
+
     const payload = await apiRequest<AuthPayload>("/auth/login", {
       method: "POST",
-      body: {
-        email: input.email.trim(),
-        password: input.password,
-        role: mapPortalRoleToApiRole(input.role),
-      },
+      body: requestBody,
     });
 
     return writeAuthSession(payload).user;
@@ -82,15 +84,28 @@ export async function loginUser(input: LoginInput) {
 
 export async function registerUser(input: RegisterInput) {
   try {
+    const requestBody: {
+      fullName: string;
+      email: string;
+      password: string;
+      phone?: string;
+      role: AuthApiRole;
+    } = {
+      fullName: input.fullName.trim(),
+      email: input.email.trim(),
+      password: input.password,
+      role: mapPortalRoleToApiRole(input.role),
+    };
+
+    const normalizedPhone = input.phone?.trim();
+
+    if (normalizedPhone) {
+      requestBody.phone = normalizedPhone;
+    }
+
     const payload = await apiRequest<AuthPayload>("/auth/register", {
       method: "POST",
-      body: {
-        fullName: input.fullName.trim(),
-        email: input.email.trim(),
-        password: input.password,
-        phone: input.phone?.trim() || undefined,
-        role: mapPortalRoleToApiRole(input.role),
-      },
+      body: requestBody,
     });
 
     return writeAuthSession(payload).user;

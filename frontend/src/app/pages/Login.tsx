@@ -442,7 +442,7 @@ export default function Login() {
                 </Tabs>
 
                 <div className="mb-4 rounded-xl border border-white/20 bg-white/5 p-3 text-xs text-blue-100">
-                  Login now uses the backend API at <span className="font-semibold text-white">http://localhost:4000/api/v1</span>. For seeded admin accounts, use password <span className="font-semibold text-white">admin123</span>; the value stored in the database is a hash, not the actual password.
+                  Login now uses the configured API base URL from <span className="font-semibold text-white">VITE_API_BASE_URL</span> or <span className="font-semibold text-white">NEXT_PUBLIC_API_BASE_URL</span>. For seeded admin accounts, use password <span className="font-semibold text-white">admin123</span>.
                 </div>
 
                 {/* Footer Links */}

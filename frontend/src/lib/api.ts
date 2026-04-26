@@ -44,7 +44,7 @@ export class ApiError extends Error {
   }
 }
 
-const DEFAULT_API_BASE_URL = "http://localhost:4000/api";
+const DEFAULT_API_BASE_URL = "https://civic-ai-platform-5.onrender.com/api";
 const AUTH_REFRESH_BUFFER_MS = 30_000;
 const AUTH_REFRESH_EXCLUDED_PATHS = new Set([
   "/auth/login",
@@ -57,6 +57,7 @@ let refreshInFlight: Promise<string | null> | null = null;
 
 function getApiBaseUrl() {
   const configuredBaseUrl =
+    process.env.VITE_API_BASE_URL?.trim().replace(/\/$/, "") ||
     process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "") ||
     process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, "") ||
     DEFAULT_API_BASE_URL;
@@ -255,7 +256,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       return { response, parsedPayload };
     } catch (error) {
       throw new ApiError(
-        `Unable to reach the SAIP API at ${getApiBaseUrl()}. Make sure the backend server is running.`,
+        `Unable to reach the SAIP API at ${getApiBaseUrl()}.`,
         503,
         "API_UNREACHABLE",
         error

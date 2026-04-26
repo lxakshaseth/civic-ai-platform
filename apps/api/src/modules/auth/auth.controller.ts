@@ -1,10 +1,7 @@
 import type { Request, Response } from "express";
-import { Prisma } from "@prisma/client";
-import bcrypt from "bcryptjs";
 import { StatusCodes } from "http-status-codes";
 
 import { env } from "config/env";
-import { prisma } from "database/clients/prisma";
 import { AppError } from "shared/errors/app-error";
 import { sendSuccess } from "utils/api-response";
 
@@ -55,31 +52,37 @@ const clearAuthCookies = (res: Response) => {
 
 export class AuthController {
   async register(req: Request, res: Response) {
-    const { fullName, email, password } = req.body;
-
     try {
-      const passwordHash = await bcrypt.hash(password, 10);
-      const user = await prisma.user.create({
-        data: {
-          fullName,
-          email: email.trim().toLowerCase(),
-          passwordHash
-        }
-      });
+      const fullName = typeof req.body?.fullName === "string" ? req.body.fullName.trim() : "";
+      const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const phone = typeof req.body?.phone === "string" ? req.body.phone.trim() : undefined;
+      const role = req.body?.role;
 
-      return sendSuccess(res, StatusCodes.CREATED, {
+      if (!fullName || !email || !password) {
+        return res.status(StatusCodes.BAD_REQUEST).json({
+          success: false,
+          message: "fullName, email, and password are required",
+          code: "VALIDATION_ERROR",
+          details: null
+        });
+      }
+
+      const result = await authService.register({
+        fullName,
+        email,
+        password,
+        phone,
+        role
+      });
+      setAuthCookies(res, result.accessToken, result.refreshToken);
+
+      return sendSuccess(res, StatusCodes.OK, {
         message: "Registration successful",
-        data: user
+        data: result
       });
     } catch (error) {
       console.error("REGISTER ERROR:", error);
-
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        return res.status(StatusCodes.BAD_REQUEST).json({
-          success: false,
-          message: "Email already exists"
-        });
-      }
 
       if (error instanceof AppError) {
         return res.status(error.statusCode).json({
@@ -92,22 +95,64 @@ export class AuthController {
 
       return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
         success: false,
-        message: "Internal server error"
+        message: "Internal server error",
+        code: "INTERNAL_SERVER_ERROR",
+        details: null
       });
     }
   }
 
   async login(req: Request, res: Response) {
-    const result = await authService.login(req.body, {
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"]
-    });
-    setAuthCookies(res, result.accessToken, result.refreshToken);
+    try {
+      const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const role = req.body?.role;
 
-    return sendSuccess(res, StatusCodes.OK, {
-      message: "Login successful",
-      data: result
-    });
+      if (!email || !password) {
+        return res.status(StatusCodes.BAD_REQUEST).json({
+          success: false,
+          message: "email and password are required",
+          code: "VALIDATION_ERROR",
+          details: null
+        });
+      }
+
+      const result = await authService.login(
+        {
+          email,
+          password,
+          role
+        },
+        {
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"]
+        }
+      );
+      setAuthCookies(res, result.accessToken, result.refreshToken);
+
+      return sendSuccess(res, StatusCodes.OK, {
+        message: "Login successful",
+        data: result
+      });
+    } catch (error) {
+      console.error("LOGIN ERROR:", error);
+
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({
+          success: false,
+          message: error.message,
+          code: error.code,
+          details: error.details ?? null
+        });
+      }
+
+      return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: "Internal server error",
+        code: "INTERNAL_SERVER_ERROR",
+        details: null
+      });
+    }
   }
 
   async refresh(req: Request, res: Response) {
