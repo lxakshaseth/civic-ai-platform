@@ -15,102 +15,95 @@ import { initSocketServer } from "sockets/socket.server";
 import { createApp } from "app";
 import { logger } from "utils/logger";
 
-dotenv.config(); // 🔥 ensure env loaded
+dotenv.config();
 
 const bootstrap = async () => {
-  // 🔥 CRITICAL FIX FOR RENDER
   const PORT = process.env.PORT || env.PORT || 4000;
 
-  logger.info(
-    {
-      nodeEnv: env.NODE_ENV,
-      port: PORT,
-      hasDatabaseUrl: Boolean(env.DATABASE_URL),
-      hasRedisUrl: Boolean(env.REDIS_URL),
-      envValidationErrors: env.ENV_VALIDATION_ERRORS
-    },
-    "Starting API server"
-  );
-
-  let shouldStartQueues = false;
-
-  // 🔁 Redis
-  try {
-    shouldStartQueues = !env.DISABLE_QUEUES && Boolean(await connectRedis());
-  } catch (error) {
-    logger.error({ error }, "Redis startup check failed. Continuing without queue workers.");
-  }
-
-  // 🗄 PostgreSQL
-  if (civicPlatformPool) {
-    try {
-      await civicPlatformPool.query("SELECT 1");
-      await ensureCivicPlatformSchema();
-      logger.info("PostgreSQL connected successfully");
-    } catch (error) {
-      logger.error({ error }, "PostgreSQL startup check failed. Continuing without database connectivity.");
-    }
-  } else {
-    logger.error("DATABASE_URL is missing or invalid. DB features disabled.");
-  }
-
-  // 🔥 Prisma
-  if (env.DATABASE_URL) {
-    try {
-      await prisma.$connect();
-      logger.info("Prisma connected successfully");
-    } catch (error) {
-      logger.error({ error }, "Prisma startup check failed.");
-    }
-  }
-
-  // 🚀 Express app
+  // 🔥 CREATE APP + SERVER
   const app = createApp();
   const httpServer = createServer(app);
 
-  initSocketServer(httpServer);
-
-  // ⚙️ Queue workers
-  if (shouldStartQueues) {
-    try {
-      startQueueWorkers();
-      logger.info("Queue workers started");
-    } catch (error) {
-      logger.error({ error }, "Failed to start queue workers.");
-      shouldStartQueues = false;
-    }
-  } else if (!env.DISABLE_QUEUES) {
-    logger.warn("Redis unavailable. Queues disabled.");
-  }
-
-  // ❌ Server error
-  httpServer.on("error", (error) => {
-    logger.error({ error }, "HTTP server failed to start");
-  });
-
-  // ✅ FINAL FIX (Render needs this)
+  // 🔥 START SERVER IMMEDIATELY (CRITICAL FOR RENDER)
   httpServer.listen(PORT, () => {
     logger.info(`🚀 API server listening on port ${PORT}`);
   });
 
-  // 🛑 Graceful shutdown
-  const shutdown = async () => {
-    logger.info("Graceful shutdown started");
+  httpServer.on("error", (error) => {
+    logger.error({ error }, "HTTP server failed to start");
+  });
 
-    if (shouldStartQueues) {
-      await stopQueueWorkers().catch(() => undefined);
-      await closeQueues().catch(() => undefined);
-      await closeBullMqConnection().catch(() => undefined);
+  // 🔥 BACKGROUND INITIALIZATION (NON-BLOCKING)
+  (async () => {
+    logger.info(
+      {
+        nodeEnv: env.NODE_ENV,
+        port: PORT,
+        hasDatabaseUrl: Boolean(env.DATABASE_URL),
+        hasRedisUrl: Boolean(env.REDIS_URL)
+      },
+      "Background initialization started"
+    );
+
+    let shouldStartQueues = false;
+
+    // 🔁 Redis
+    try {
+      shouldStartQueues = !env.DISABLE_QUEUES && Boolean(await connectRedis());
+    } catch (error) {
+      logger.error({ error }, "Redis connection failed");
     }
 
-    httpServer.close(async () => {
-      if (civicPlatformPool) {
-        await civicPlatformPool.end().catch(() => undefined);
+    // 🗄 PostgreSQL
+    if (civicPlatformPool) {
+      try {
+        await civicPlatformPool.query("SELECT 1");
+        await ensureCivicPlatformSchema();
+        logger.info("PostgreSQL connected");
+      } catch (error) {
+        logger.error({ error }, "PostgreSQL failed");
       }
+    } else {
+      logger.warn("No PostgreSQL pool configured");
+    }
 
-      await prisma.$disconnect().catch(() => undefined);
+    // 🔥 Prisma
+    try {
+      await prisma.$connect();
+      logger.info("Prisma connected");
+    } catch (error) {
+      logger.error({ error }, "Prisma failed");
+    }
 
-      logger.info("Shutdown completed");
+    // ⚙️ Queues
+    if (shouldStartQueues) {
+      try {
+        startQueueWorkers();
+        logger.info("Queue workers started");
+      } catch (error) {
+        logger.error({ error }, "Queue start failed");
+      }
+    }
+
+    // 🔌 Sockets
+    try {
+      initSocketServer(httpServer);
+    } catch (error) {
+      logger.error({ error }, "Socket init failed");
+    }
+  })();
+
+  // 🛑 GRACEFUL SHUTDOWN
+  const shutdown = async () => {
+    logger.info("Shutdown started");
+
+    await stopQueueWorkers().catch(() => {});
+    await closeQueues().catch(() => {});
+    await closeBullMqConnection().catch(() => {});
+    await prisma.$disconnect().catch(() => {});
+
+    httpServer.close(() => {
+      logger.info("Server closed");
       process.exit(0);
     });
   };
@@ -119,15 +112,15 @@ const bootstrap = async () => {
   process.on("SIGTERM", shutdown);
 };
 
-// 🔥 Bootstrap
+// 🚀 START
 bootstrap().catch(async (error) => {
   logger.error({ error }, "Unexpected bootstrap failure");
 
   if (civicPlatformPool) {
-    await civicPlatformPool.end().catch(() => undefined);
+    await civicPlatformPool.end().catch(() => {});
   }
 
-  await prisma.$disconnect().catch(() => undefined);
+  await prisma.$disconnect().catch(() => {});
 
   process.exit(1);
 });
