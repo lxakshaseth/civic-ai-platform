@@ -5,16 +5,15 @@
   "packageManager": "npm@10.9.3",
   "workspaces": [
     "apps/*",
-    "packages/*",
-    "frontend"
+    "packages/*"
   ],
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
     "start": "npm run start:api",
-    "build:frontend": "npm run build --workspace frontend",
+    "build:frontend": "npm --prefix frontend run build",
     "build:api": "npm run build --workspace @saip/api",
-    "start:frontend": "npm run start --workspace frontend",
+    "start:frontend": "npm --prefix frontend run start",
     "start:api": "npm run start --workspace @saip/api",
     "lint": "turbo run lint",
     "test": "turbo run test"

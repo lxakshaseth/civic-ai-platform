@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
-
-// ✅ Correct global CSS import
-import "../src/styles/index.css";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "SAIP",
