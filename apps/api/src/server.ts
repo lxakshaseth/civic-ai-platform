@@ -21,7 +21,9 @@ dotenv.config();
 const bootstrap = async () => {
   const PORT = Number(process.env.PORT) || Number(env.PORT) || 4000;
 
-  // 🔥 Try to create your real app; fallback to a basic one if it throws
+  // 🔥 DEBUG — THIS IS THE MOST IMPORTANT LINE
+  console.log("🔥 ENV DATABASE_URL:", process.env.DATABASE_URL);
+
   let app;
   try {
     app = createApp();
@@ -36,24 +38,24 @@ const bootstrap = async () => {
 
   const httpServer = createServer(app);
 
-  // 🔥 START SERVER IMMEDIATELY (CRITICAL FOR RENDER)
+  // ✅ START SERVER FIRST (Render requirement)
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 API server listening on port ${PORT}`);
     logger.info(`🚀 API server listening on port ${PORT}`);
   });
 
   httpServer.on("error", (error) => {
-    console.error("❌ HTTP server failed to start:", error);
-    logger.error({ error }, "HTTP server failed to start");
+    console.error("❌ HTTP server failed:", error);
+    logger.error({ error }, "HTTP server failed");
   });
 
-  // 🔥 NON-BLOCKING BACKGROUND INIT
+  // 🔥 BACKGROUND INIT
   (async () => {
     logger.info(
       {
         nodeEnv: env.NODE_ENV,
         port: PORT,
-        hasDatabaseUrl: Boolean(env.DATABASE_URL),
+        hasDatabaseUrl: Boolean(process.env.DATABASE_URL),
         hasRedisUrl: Boolean(env.REDIS_URL),
       },
       "Background initialization started"
@@ -61,35 +63,42 @@ const bootstrap = async () => {
 
     let shouldStartQueues = false;
 
-    // Redis
+    // 🔁 Redis
     try {
       shouldStartQueues = !env.DISABLE_QUEUES && Boolean(await connectRedis());
     } catch (error) {
-      logger.error({ error }, "Redis connection failed");
+      logger.error({ error }, "Redis failed");
     }
 
-    // PostgreSQL
+    // 🗄 PostgreSQL (raw pool)
     if (civicPlatformPool) {
       try {
         await civicPlatformPool.query("SELECT 1");
         await ensureCivicPlatformSchema();
-        logger.info("PostgreSQL connected");
+        logger.info("PostgreSQL connected (pool)");
       } catch (error) {
-        logger.error({ error }, "PostgreSQL failed");
+        logger.error({ error }, "PostgreSQL pool failed");
       }
-    } else {
-      logger.warn("No PostgreSQL pool configured");
     }
 
-    // Prisma
+    // 🔥 Prisma (CRITICAL)
     try {
       await prisma.$connect();
+
+      // 🔥 THIS TELLS US EXACT DB USED
+      const url =
+        (prisma as any)?._engineConfig?.datasources?.[0]?.url ??
+        "❌ not resolved";
+
+      console.log("🔥 Prisma DB URL:", url);
+
       logger.info("Prisma connected");
     } catch (error) {
+      console.error("❌ Prisma failed:", error);
       logger.error({ error }, "Prisma failed");
     }
 
-    // Queues
+    // ⚙️ Queues
     if (shouldStartQueues) {
       try {
         startQueueWorkers();
@@ -99,7 +108,7 @@ const bootstrap = async () => {
       }
     }
 
-    // Sockets
+    // 🔌 Sockets
     try {
       initSocketServer(httpServer);
     } catch (error) {
@@ -107,7 +116,7 @@ const bootstrap = async () => {
     }
   })();
 
-  // 🛑 Graceful shutdown
+  // 🛑 Shutdown
   const shutdown = async () => {
     logger.info("Shutdown started");
 
@@ -129,7 +138,7 @@ const bootstrap = async () => {
 // 🚀 START
 bootstrap().catch(async (error) => {
   console.error("❌ Bootstrap failed:", error);
-  logger.error({ error }, "Unexpected bootstrap failure");
+  logger.error({ error }, "Bootstrap failure");
 
   if (civicPlatformPool) {
     await civicPlatformPool.end().catch(() => {});
