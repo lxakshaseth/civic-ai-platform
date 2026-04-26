@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import cors, { type CorsOptions } from "cors";
 import express from "express";
 import dotenv from "dotenv";
 
@@ -14,22 +15,59 @@ import { logger } from "utils/logger";
 
 dotenv.config();
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://civic-ai-platform-frontend-git-main-akshats-projects.vercel.app"
+];
+
+const corsOptions: CorsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true
+};
+
+const removeCorsMiddleware = (app: express.Express) => {
+  const stack = (app as express.Express & {
+    _router?: { stack?: Array<{ handle?: { name?: string } }> };
+  })._router?.stack;
+
+  if (!stack) {
+    return;
+  }
+
+  (app as express.Express & {
+    _router?: { stack?: Array<{ handle?: { name?: string } }> };
+  })._router!.stack = stack.filter((layer) => layer.handle?.name !== "corsMiddleware");
+};
+
 const bootstrap = async () => {
   const PORT = Number(process.env.PORT) || Number(env.PORT) || 4000;
 
   console.log("ENV DATABASE_URL:", process.env.DATABASE_URL);
 
-  let app;
+  let serviceApp;
   try {
-    app = createApp();
+    serviceApp = createApp();
+    removeCorsMiddleware(serviceApp);
   } catch (error) {
     console.error("createApp() failed, using fallback app:", error);
-    app = express();
-    app.use(express.json());
-    app.get("/", (_req, res) => {
+    serviceApp = express();
+    serviceApp.use(express.json());
+    serviceApp.get("/", (_req, res) => {
       res.json({ success: true, message: "Fallback server running" });
     });
   }
+
+  const app = express();
+  app.use(cors(corsOptions));
+  app.options("*", cors(corsOptions));
+  app.use(serviceApp);
 
   const httpServer = createServer(app);
 
