@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import dotenv from "dotenv";
 
 import { env } from "config/env";
 import {
@@ -14,11 +15,16 @@ import { initSocketServer } from "sockets/socket.server";
 import { createApp } from "app";
 import { logger } from "utils/logger";
 
+dotenv.config(); // 🔥 ensure env loaded
+
 const bootstrap = async () => {
+  // 🔥 CRITICAL FIX FOR RENDER
+  const PORT = process.env.PORT || env.PORT || 4000;
+
   logger.info(
     {
       nodeEnv: env.NODE_ENV,
-      port: env.PORT,
+      port: PORT,
       hasDatabaseUrl: Boolean(env.DATABASE_URL),
       hasRedisUrl: Boolean(env.REDIS_URL),
       envValidationErrors: env.ENV_VALIDATION_ERRORS
@@ -28,12 +34,14 @@ const bootstrap = async () => {
 
   let shouldStartQueues = false;
 
+  // 🔁 Redis
   try {
     shouldStartQueues = !env.DISABLE_QUEUES && Boolean(await connectRedis());
   } catch (error) {
     logger.error({ error }, "Redis startup check failed. Continuing without queue workers.");
   }
 
+  // 🗄 PostgreSQL
   if (civicPlatformPool) {
     try {
       await civicPlatformPool.query("SELECT 1");
@@ -43,68 +51,64 @@ const bootstrap = async () => {
       logger.error({ error }, "PostgreSQL startup check failed. Continuing without database connectivity.");
     }
   } else {
-    logger.error("DATABASE_URL is missing, invalid, or contains a placeholder. Database features are disabled.");
+    logger.error("DATABASE_URL is missing or invalid. DB features disabled.");
   }
 
-  if (env.DATABASE_URL_IS_VALID) {
+  // 🔥 Prisma
+  if (env.DATABASE_URL) {
     try {
       await prisma.$connect();
       logger.info("Prisma connected successfully");
     } catch (error) {
-      logger.error({ error }, "Prisma startup check failed. Prisma-backed endpoints may be unavailable.");
+      logger.error({ error }, "Prisma startup check failed.");
     }
   }
 
+  // 🚀 Express app
   const app = createApp();
   const httpServer = createServer(app);
 
   initSocketServer(httpServer);
 
+  // ⚙️ Queue workers
   if (shouldStartQueues) {
     try {
       startQueueWorkers();
       logger.info("Queue workers started");
     } catch (error) {
-      logger.error({ error }, "Failed to start queue workers. Continuing without queues.");
+      logger.error({ error }, "Failed to start queue workers.");
       shouldStartQueues = false;
     }
   } else if (!env.DISABLE_QUEUES) {
-    logger.warn("Redis is unavailable. Queue workers will stay disabled for this process.");
+    logger.warn("Redis unavailable. Queues disabled.");
   }
 
+  // ❌ Server error
   httpServer.on("error", (error) => {
     logger.error({ error }, "HTTP server failed to start");
   });
 
-  httpServer.listen(env.PORT, () => {
-    logger.info(`API server listening on port ${env.PORT}`);
+  // ✅ FINAL FIX (Render needs this)
+  httpServer.listen(PORT, () => {
+    logger.info(`🚀 API server listening on port ${PORT}`);
   });
 
+  // 🛑 Graceful shutdown
   const shutdown = async () => {
     logger.info("Graceful shutdown started");
 
     if (shouldStartQueues) {
-      await stopQueueWorkers().catch((error) => {
-        logger.error({ error }, "Failed to stop queue workers cleanly");
-      });
-      await closeQueues().catch((error) => {
-        logger.error({ error }, "Failed to close queues cleanly");
-      });
-      await closeBullMqConnection().catch((error) => {
-        logger.error({ error }, "Failed to close BullMQ connection cleanly");
-      });
+      await stopQueueWorkers().catch(() => undefined);
+      await closeQueues().catch(() => undefined);
+      await closeBullMqConnection().catch(() => undefined);
     }
 
     httpServer.close(async () => {
       if (civicPlatformPool) {
-        await civicPlatformPool.end().catch((error) => {
-          logger.error({ error }, "Failed to close PostgreSQL pool cleanly");
-        });
+        await civicPlatformPool.end().catch(() => undefined);
       }
 
-      await prisma.$disconnect().catch((error) => {
-        logger.error({ error }, "Failed to disconnect Prisma cleanly");
-      });
+      await prisma.$disconnect().catch(() => undefined);
 
       logger.info("Shutdown completed");
       process.exit(0);
@@ -115,8 +119,9 @@ const bootstrap = async () => {
   process.on("SIGTERM", shutdown);
 };
 
+// 🔥 Bootstrap
 bootstrap().catch(async (error) => {
-  logger.error({ error }, "Unexpected bootstrap failure. Server process will stay alive only if HTTP startup succeeded.");
+  logger.error({ error }, "Unexpected bootstrap failure");
 
   if (civicPlatformPool) {
     await civicPlatformPool.end().catch(() => undefined);
