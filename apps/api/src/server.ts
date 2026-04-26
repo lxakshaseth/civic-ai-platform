@@ -15,20 +15,34 @@ import { logger } from "utils/logger";
 
 dotenv.config();
 
-const allowedOrigins = new Set([
-  "http://localhost:3000",
-  "https://civic-ai-platform-frontend-git-main-akshats-projects-eb688e4b.vercel.app"
-]);
+const isAllowedOrigin = (origin: string) => {
+  if (origin.endsWith(".vercel.app")) {
+    return true;
+  }
+
+  try {
+    const { hostname, protocol } = new URL(origin);
+    const isLocalhost =
+      (hostname === "localhost" || hostname === "127.0.0.1") &&
+      (protocol === "http:" || protocol === "https:");
+
+    return isLocalhost;
+  } catch {
+    return false;
+  }
+};
 
 const corsOptions: CorsOptions = {
   // Reflect only trusted origins so credentials remain safe in production.
   origin(origin, callback) {
+    console.log("Incoming origin:", origin);
+
     if (!origin) {
       callback(null, true);
       return;
     }
 
-    if (allowedOrigins.has(origin)) {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
       return;
     }
@@ -36,8 +50,8 @@ const corsOptions: CorsOptions = {
     callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   optionsSuccessStatus: 204
 };
 
