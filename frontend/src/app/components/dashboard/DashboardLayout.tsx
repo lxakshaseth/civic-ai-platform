@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type WheelEvent } from "react";
 import { Menu, X } from "lucide-react";
 import { GovHeader } from "../GovHeader";
 import { cn } from "../ui/utils";
@@ -18,14 +18,36 @@ export function DashboardSidebar({
   isMobileMenuOpen,
   sidebarWidth,
 }: DashboardSidebarProps) {
+  const sidebarRef = useRef<HTMLElement | null>(null);
   const desktopStyles: CSSProperties = {
     top: desktopTopOffset,
     height: `calc(100vh - ${desktopTopOffset}px)`,
     width: `${sidebarWidth}px`,
   };
 
+  const handleWheelCapture = (event: WheelEvent<HTMLElement>) => {
+    if (window.innerWidth < 1024) {
+      return;
+    }
+
+    const sidebarElement = sidebarRef.current;
+
+    if (!sidebarElement) {
+      return;
+    }
+
+    const canScroll = sidebarElement.scrollHeight > sidebarElement.clientHeight;
+
+    if (!canScroll) {
+      return;
+    }
+
+    event.stopPropagation();
+  };
+
   return (
     <aside
+      ref={sidebarRef}
       className={cn(
         "fixed inset-y-0 left-0 z-40 flex w-[min(20rem,calc(100vw-1rem))] min-h-0 flex-col border-r border-gray-300 bg-white shadow-lg transition-transform duration-200 ease-in-out",
         "overflow-y-auto overscroll-contain [scrollbar-gutter:stable] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
@@ -34,6 +56,7 @@ export function DashboardSidebar({
         className,
       )}
       style={desktopStyles}
+      onWheelCapture={handleWheelCapture}
     >
       {children}
     </aside>
