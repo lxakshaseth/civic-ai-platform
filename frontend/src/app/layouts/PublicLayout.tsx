@@ -52,7 +52,7 @@ export default function PublicLayout() {
   const { user, loading, isAuthorized, logout } = useAuthState({ requiredRole: "public" });
   const { data: sidebarData } = useApiData(
     async () => {
-      if (loading || !user) {
+      if (loading || !user || location.pathname === "/public") {
         return {
           complaintCount: 0,
           resolvedCount: 0,
@@ -77,7 +77,7 @@ export default function PublicLayout() {
         unreadNotifications: notificationStats.unread,
       };
     },
-    [loading, user?.id]
+    [loading, location.pathname, user?.id]
   );
 
   if (loading) {

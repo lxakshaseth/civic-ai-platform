@@ -51,10 +51,9 @@ export function useAuthState(options: UseAuthStateOptions = {}) {
       }
 
       setUser(storedUser);
-      setLoading(true);
+      setLoading(false);
 
       if (options.syncOnMount === false) {
-        setLoading(false);
         return;
       }
 
@@ -65,7 +64,6 @@ export function useAuthState(options: UseAuthStateOptions = {}) {
       }
 
       setUser(syncedUser);
-      setLoading(false);
 
       if (
         options.requiredRole &&

@@ -54,7 +54,7 @@ export default function AdminLayout() {
   const { user, loading, isAuthorized, logout } = useAuthState({ requiredRole: "admin" });
   const { data: adminSummary } = useApiData(
     async () => {
-      if (loading || !user) {
+      if (loading || !user || location.pathname === "/admin") {
         return {
           totalUsers: 0,
           totalCitizens: 0,
@@ -69,7 +69,7 @@ export default function AdminLayout() {
 
       return apiRequest<AdminDashboardSummary>("/admin/dashboard");
     },
-    [loading, user?.id]
+    [loading, location.pathname, user?.id]
   );
 
   if (loading) {

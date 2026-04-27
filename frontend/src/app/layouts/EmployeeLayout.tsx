@@ -66,7 +66,7 @@ export default function EmployeeLayout() {
   const { user, loading, isAuthorized, logout } = useAuthState({ requiredRole: "employee" });
   const { data: employeePortalData } = useApiData(
     async () => {
-      if (loading || !user) {
+      if (loading || !user || location.pathname === "/employee") {
         return {
           dashboard: {
             summary: {
@@ -96,7 +96,7 @@ export default function EmployeeLayout() {
 
       return { dashboard, performance };
     },
-    [loading, user?.id]
+    [loading, location.pathname, user?.id]
   );
 
   if (loading) {

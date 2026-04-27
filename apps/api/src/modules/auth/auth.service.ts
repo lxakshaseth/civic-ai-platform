@@ -5,6 +5,7 @@ import { v4 as uuid } from "uuid";
 import { env } from "config/env";
 import type { RefreshTokenPayload } from "modules/auth/auth.interface";
 import { ProfileService } from "modules/profile/profile.service";
+import { ProfileRepository } from "modules/profile/profile.repository";
 import { AppError } from "shared/errors/app-error";
 import { hashText } from "utils/crypto";
 import { durationToMs } from "utils/duration";
@@ -37,7 +38,8 @@ interface RequestContext {
 export class AuthService {
   constructor(
     private readonly authRepository: AuthRepository = new AuthRepository(),
-    private readonly profileService: ProfileService = new ProfileService()
+    private readonly profileService: ProfileService = new ProfileService(),
+    private readonly profileRepository: ProfileRepository = new ProfileRepository()
   ) {}
 
   async register(input: RegisterInput) {
@@ -220,16 +222,23 @@ export class AuthService {
   }
 
   private async buildAuthUser(user: AuthUserRecord): Promise<AuthResponseUser> {
-    let profile: Awaited<ReturnType<ProfileService["syncAuthUserProfile"]>> | null = null;
+    let profile:
+      | Awaited<ReturnType<ProfileRepository["findByEmail"]>>
+      | Awaited<ReturnType<ProfileService["syncAuthUserProfile"]>>
+      | null = null;
 
     try {
-      profile = await this.profileService.syncAuthUserProfile({
-        email: user.email,
-        name: user.fullName,
-        role: user.role,
-        phone: user.phone,
-        language: user.language ?? "en"
-      });
+      profile = await this.profileRepository.findByEmail(user.email);
+
+      if (!profile) {
+        profile = await this.profileService.syncAuthUserProfile({
+          email: user.email,
+          name: user.fullName,
+          role: user.role,
+          phone: user.phone,
+          language: user.language ?? "en"
+        });
+      }
     } catch (error) {
       logger.warn(
         {
@@ -241,16 +250,41 @@ export class AuthService {
       );
     }
 
+    const profileGender = profile
+      ? "gender" in profile
+        ? profile.gender
+        : null
+      : null;
+    const profileLanguage = profile
+      ? "language" in profile
+        ? profile.language
+        : null
+      : null;
+    const profileCompleted = profile
+      ? "profile_completed" in profile
+        ? profile.profile_completed
+        : "profileCompleted" in profile
+          ? profile.profileCompleted
+          : null
+      : null;
+    const profileShowSanitaryFeature = profile
+      ? "show_sanitary_feature" in profile
+        ? profile.show_sanitary_feature
+        : "showSanitaryFeature" in profile
+          ? profile.showSanitaryFeature
+          : null
+      : null;
+
     return {
       id: user.id,
       fullName: user.fullName,
       email: user.email,
       role: user.role,
       departmentId: user.departmentId,
-      gender: profile?.gender || user.gender || null,
-      language: profile?.language || user.language || "en",
-      profileCompleted: profile?.profile_completed ?? user.profileCompleted,
-      showSanitaryFeature: profile?.show_sanitary_feature ?? Boolean(user.showSanitaryFeature)
+      gender: profileGender || user.gender || null,
+      language: profileLanguage || user.language || "en",
+      profileCompleted: profileCompleted ?? user.profileCompleted,
+      showSanitaryFeature: profileShowSanitaryFeature ?? Boolean(user.showSanitaryFeature)
     };
   }
 }
