@@ -177,7 +177,7 @@ export default function AdminLayout() {
       isMobileMenuOpen={isMobileMenuOpen}
       onMobileMenuClose={() => setIsMobileMenuOpen(false)}
       onMobileMenuToggle={() => setIsMobileMenuOpen((open) => !open)}
-      sidebarWidthClassName="lg:w-80"
+      sidebarWidth={320}
       sidebar={
         <>
           <div className="border-b border-gray-200 bg-gradient-to-br from-[#1e3a8a] to-[#2563EB] px-4 py-4">

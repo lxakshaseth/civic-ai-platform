@@ -165,7 +165,7 @@ export default function PublicLayout() {
       isMobileMenuOpen={isMobileMenuOpen}
       onMobileMenuClose={() => setIsMobileMenuOpen(false)}
       onMobileMenuToggle={() => setIsMobileMenuOpen((open) => !open)}
-      sidebarWidthClassName="lg:w-72"
+      sidebarWidth={288}
       sidebar={
         <>
           {/* Logo & User Section */}

@@ -220,7 +220,7 @@ export default function EmployeeLayout() {
       isMobileMenuOpen={isMobileMenuOpen}
       onMobileMenuClose={() => setIsMobileMenuOpen(false)}
       onMobileMenuToggle={() => setIsMobileMenuOpen((open) => !open)}
-      sidebarWidthClassName="lg:w-80"
+      sidebarWidth={320}
       sidebar={
         <>
           {/* Logo & Employee Section */}
