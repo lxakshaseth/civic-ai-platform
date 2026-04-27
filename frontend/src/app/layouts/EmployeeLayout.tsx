@@ -8,8 +8,6 @@ import {
   Bell, 
   Building2,
   LogOut,
-  Menu,
-  X,
   Home,
   ChevronRight,
   Search,
@@ -26,13 +24,13 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { useState } from "react";
-import { GovHeader } from "../components/GovHeader";
 import { GovFooter } from "../components/GovFooter";
 import { useAuthState } from "../hooks/useAuthState";
 import { useApiData } from "../hooks/useApiData";
 import { apiRequest } from "@/src/lib/api";
 import { formatPriority } from "@/src/lib/presentation";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { DashboardLayout } from "../components/dashboard/DashboardLayout";
 
 type EmployeeDashboardData = {
   summary: {
@@ -218,27 +216,13 @@ export default function EmployeeLayout() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col overflow-x-hidden bg-gray-50">
-      {/* Government Header */}
-      <GovHeader />
-
-      <div className="flex min-h-0 flex-1">
-        {/* Mobile Menu Button */}
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="lg:hidden fixed top-24 left-4 z-50 bg-white p-2 rounded-lg shadow-lg border border-gray-300"
-        >
-          {isMobileMenuOpen ? <X className="size-6" /> : <Menu className="size-6" />}
-        </button>
-
-        {/* Sidebar */}
-        <aside className={`
-          w-[min(20rem,calc(100vw-1rem))] bg-white border-r border-gray-300 flex flex-col shadow-lg overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden
-          lg:static lg:h-full lg:w-80 lg:translate-x-0
-          fixed inset-y-0 left-0 z-40
-          transform transition-transform duration-200 ease-in-out
-          ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-        `}>
+    <DashboardLayout
+      isMobileMenuOpen={isMobileMenuOpen}
+      onMobileMenuClose={() => setIsMobileMenuOpen(false)}
+      onMobileMenuToggle={() => setIsMobileMenuOpen((open) => !open)}
+      sidebarWidthClassName="lg:w-80"
+      sidebar={
+        <>
           {/* Logo & Employee Section */}
           <div className="p-5 border-b border-gray-200 bg-gradient-to-br from-[#166534] via-[#15803d] to-[#22c55e] flex-shrink-0">
             <div className="flex items-center gap-3 mb-4">
@@ -483,54 +467,39 @@ export default function EmployeeLayout() {
               Logout
             </Button>
           </div>
-        </aside>
-
-        {/* Mobile Overlay */}
-        {isMobileMenuOpen && (
-          <div
-            className="lg:hidden fixed inset-0 bg-black/50 z-30"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-        )}
-
-        {/* Main Content */}
-        <main className="flex-1 min-h-0 flex flex-col overflow-x-hidden">
-          {/* Enhanced Breadcrumb & Header */}
-          <div className="bg-white border-b border-gray-200 px-4 py-4 shadow-sm md:px-6">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                {getBreadcrumbs().map((crumb, idx, arr) => (
-                  <div key={crumb.href} className="flex items-center gap-2">
-                    {idx === 0 ? (
-                      <Home className="size-4" />
-                    ) : null}
-                    <Link 
-                      to={crumb.href} 
-                      className={`${idx === arr.length - 1 ? 'text-[#15803d] font-semibold' : 'hover:text-[#15803d] transition-colors'}`}
-                    >
-                      {crumb.name}
-                    </Link>
-                    {idx < arr.length - 1 && <ChevronRight className="size-4" />}
-                  </div>
-                ))}
-              </div>
-              
-              {/* Current Location */}
-              <div className="hidden md:flex items-center gap-2 text-xs bg-green-50 px-3 py-1.5 rounded-full border border-green-200">
-                <MapPin className="size-3.5 text-green-600" />
-                <span className="text-gray-700">Current Department:</span>
-                <span className="font-semibold text-green-700">{employeeData.department}</span>
-              </div>
+        </>
+      }
+      header={
+        <div className="bg-white border-b border-gray-200 px-4 py-4 shadow-sm md:px-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              {getBreadcrumbs().map((crumb, idx, arr) => (
+                <div key={crumb.href} className="flex items-center gap-2">
+                  {idx === 0 ? (
+                    <Home className="size-4" />
+                  ) : null}
+                  <Link 
+                    to={crumb.href} 
+                    className={`${idx === arr.length - 1 ? 'text-[#15803d] font-semibold' : 'hover:text-[#15803d] transition-colors'}`}
+                  >
+                    {crumb.name}
+                  </Link>
+                  {idx < arr.length - 1 && <ChevronRight className="size-4" />}
+                </div>
+              ))}
+            </div>
+            
+            <div className="hidden md:flex items-center gap-2 text-xs bg-green-50 px-3 py-1.5 rounded-full border border-green-200">
+              <MapPin className="size-3.5 text-green-600" />
+              <span className="text-gray-700">Current Department:</span>
+              <span className="font-semibold text-green-700">{employeeData.department}</span>
             </div>
           </div>
-
-          {/* Content Area */}
-          <div className="flex-1 min-h-0">
-            <Outlet />
-            <GovFooter />
-          </div>
-        </main>
-      </div>
-    </div>
+        </div>
+      }
+      footer={<GovFooter />}
+    >
+      <Outlet />
+    </DashboardLayout>
   );
 }

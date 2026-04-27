@@ -16,7 +16,6 @@ import {
   Leaf,
   LogOut,
   Megaphone,
-  Menu,
   Wallet,
   Search,
   Shield,
@@ -24,19 +23,18 @@ import {
   TrendingUp,
   User,
   Users,
-  X,
 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { GovFooter } from "../components/GovFooter";
-import { GovHeader } from "../components/GovHeader";
 import { useAuthState } from "../hooks/useAuthState";
 import { useApiData } from "../hooks/useApiData";
 import { apiRequest } from "@/src/lib/api";
 import { formatRoleLabel } from "@/src/lib/presentation";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { DashboardLayout } from "../components/dashboard/DashboardLayout";
 
 type AdminDashboardSummary = {
   totalUsers: number;
@@ -175,25 +173,13 @@ export default function AdminLayout() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col overflow-x-hidden bg-gray-50">
-      <GovHeader />
-
-      <div className="flex min-h-0 flex-1">
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="fixed left-4 top-24 z-50 rounded-lg border border-gray-300 bg-white p-2 shadow-lg lg:hidden"
-        >
-          {isMobileMenuOpen ? <X className="size-6" /> : <Menu className="size-6" />}
-        </button>
-
-        <aside
-          className={`
-            fixed inset-y-0 left-0 z-40 flex w-[min(20rem,calc(100vw-1rem))] min-h-0 flex-col overflow-y-auto border-r border-gray-300 bg-white shadow-lg [scrollbar-width:none] [&::-webkit-scrollbar]:hidden
-            transition-transform duration-200 ease-in-out
-            lg:static lg:h-full lg:w-80 lg:translate-x-0
-            ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
-          `}
-        >
+    <DashboardLayout
+      isMobileMenuOpen={isMobileMenuOpen}
+      onMobileMenuClose={() => setIsMobileMenuOpen(false)}
+      onMobileMenuToggle={() => setIsMobileMenuOpen((open) => !open)}
+      sidebarWidthClassName="lg:w-80"
+      sidebar={
+        <>
           <div className="border-b border-gray-200 bg-gradient-to-br from-[#1e3a8a] to-[#2563EB] px-4 py-4">
             <div className="flex items-center gap-3">
               <div className="rounded-xl border border-white/30 bg-white/20 p-2 shadow-lg backdrop-blur-sm">
@@ -357,60 +343,50 @@ export default function AdminLayout() {
               Logout
             </Button>
           </div>
-        </aside>
-
-        {isMobileMenuOpen && (
-          <div
-            className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-        )}
-
-        <main className="flex min-h-0 flex-1 flex-col overflow-x-hidden">
-          <div className="border-b border-gray-200 bg-white px-4 py-4 shadow-sm md:px-6">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                {getBreadcrumbs().map((crumb, idx, arr) => (
-                  <div key={crumb.href} className="flex items-center gap-2">
-                    {idx === 0 ? <Home className="size-4" /> : null}
-                    <Link
-                      to={crumb.href}
-                      className={
-                        idx === arr.length - 1
-                          ? "font-semibold text-[#1e3a8a]"
-                          : "transition-colors hover:text-[#1e3a8a]"
-                      }
-                    >
-                      {crumb.name}
-                    </Link>
-                    {idx < arr.length - 1 && <ChevronRight className="size-4" />}
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                {systemStats.criticalAlerts > 0 && (
-                  <div className="flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs">
-                    <AlertTriangle className="size-3.5 text-red-600" />
-                    <span className="font-semibold text-red-700">
-                      {systemStats.criticalAlerts} critical alerts
-                    </span>
-                  </div>
-                )}
-                <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-xs">
-                  <Activity className="size-3.5 text-green-600" />
-                  <span className="font-semibold text-green-700">Command stack healthy</span>
+        </>
+      }
+      header={
+        <div className="border-b border-gray-200 bg-white px-4 py-4 shadow-sm md:px-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+              {getBreadcrumbs().map((crumb, idx, arr) => (
+                <div key={crumb.href} className="flex items-center gap-2">
+                  {idx === 0 ? <Home className="size-4" /> : null}
+                  <Link
+                    to={crumb.href}
+                    className={
+                      idx === arr.length - 1
+                        ? "font-semibold text-[#1e3a8a]"
+                        : "transition-colors hover:text-[#1e3a8a]"
+                    }
+                  >
+                    {crumb.name}
+                  </Link>
+                  {idx < arr.length - 1 && <ChevronRight className="size-4" />}
                 </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {systemStats.criticalAlerts > 0 && (
+                <div className="flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs">
+                  <AlertTriangle className="size-3.5 text-red-600" />
+                  <span className="font-semibold text-red-700">
+                    {systemStats.criticalAlerts} critical alerts
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-xs">
+                <Activity className="size-3.5 text-green-600" />
+                <span className="font-semibold text-green-700">Command stack healthy</span>
               </div>
             </div>
           </div>
-
-          <div className="min-h-0 flex-1">
-            <Outlet />
-            <GovFooter />
-          </div>
-        </main>
-      </div>
-    </div>
+        </div>
+      }
+      footer={<GovFooter />}
+    >
+      <Outlet />
+    </DashboardLayout>
   );
 }

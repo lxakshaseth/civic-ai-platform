@@ -11,8 +11,6 @@ import {
   Phone,
   Building2,
   LogOut,
-  Menu,
-  X,
   Home,
   ChevronRight,
   Search,
@@ -28,13 +26,13 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { useState } from "react";
-import { GovHeader } from "../components/GovHeader";
 import { GovFooter } from "../components/GovFooter";
 import { useAuthState } from "../hooks/useAuthState";
 import { useApiData } from "../hooks/useApiData";
 import { apiRequest } from "@/src/lib/api";
 import { normalizeComplaintStatusKey } from "@/src/lib/presentation";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { DashboardLayout } from "../components/dashboard/DashboardLayout";
 
 type CitizenComplaintSummary = {
   id: string;
@@ -163,27 +161,13 @@ export default function PublicLayout() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col overflow-x-hidden bg-gray-50">
-      {/* Government Header */}
-      <GovHeader />
-
-      <div className="flex min-h-0 flex-1">
-        {/* Mobile Menu Button */}
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="lg:hidden fixed top-24 left-4 z-50 bg-white p-2 rounded-lg shadow-lg border border-gray-300"
-        >
-          {isMobileMenuOpen ? <X className="size-6" /> : <Menu className="size-6" />}
-        </button>
-
-        {/* Sidebar */}
-        <aside className={`
-          w-[min(18rem,calc(100vw-1rem))] bg-white border-r border-gray-300 flex flex-col shadow-lg overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:overflow-hidden
-          lg:static lg:h-full lg:w-72 lg:translate-x-0
-          fixed inset-y-0 left-0 z-40
-          transform transition-transform duration-200 ease-in-out
-          ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-        `}>
+    <DashboardLayout
+      isMobileMenuOpen={isMobileMenuOpen}
+      onMobileMenuClose={() => setIsMobileMenuOpen(false)}
+      onMobileMenuToggle={() => setIsMobileMenuOpen((open) => !open)}
+      sidebarWidthClassName="lg:w-72"
+      sidebar={
+        <>
           {/* Logo & User Section */}
           <div className="border-b border-gray-200 bg-gradient-to-br from-[#1e3a8a] to-[#1e40af] px-5 py-4 flex-shrink-0">
             <div className="flex items-center gap-3">
@@ -377,58 +361,43 @@ export default function PublicLayout() {
               Logout
             </Button>
           </div>
-        </aside>
-
-        {/* Mobile Overlay */}
-        {isMobileMenuOpen && (
-          <div
-            className="lg:hidden fixed inset-0 bg-black/50 z-30"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-        )}
-
-        {/* Main Content */}
-        <main className="flex-1 min-h-0 flex flex-col overflow-x-hidden">
-          {/* Enhanced Breadcrumb & Header */}
-          <div className="bg-white border-b border-gray-200 px-4 py-4 shadow-sm md:px-6">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                {getBreadcrumbs().map((crumb, idx, arr) => (
-                  <div key={crumb.href} className="flex items-center gap-2">
-                    {idx === 0 ? (
-                      <Home className="size-4" />
-                    ) : null}
-                    <Link 
-                      to={crumb.href} 
-                      className={`${idx === arr.length - 1 ? 'text-[#1e3a8a] font-semibold' : 'hover:text-[#1e3a8a] transition-colors'}`}
-                    >
-                      {crumb.name}
-                    </Link>
-                    {idx < arr.length - 1 && <ChevronRight className="size-4" />}
-                  </div>
-                ))}
-              </div>
-              
-              {/* Quick Stats in Header */}
-              <div className="hidden md:flex items-center gap-4">
-                <div className="flex items-center gap-2 text-xs">
-                  <Award className="size-4 text-blue-600" />
-                  <span className="text-gray-600">Citizen ID:</span>
-                  <span className="font-mono font-semibold text-gray-900">
-                    {user?.id ? user.id.slice(0, 8).toUpperCase() : "SESSION"}
-                  </span>
+        </>
+      }
+      header={
+        <div className="bg-white border-b border-gray-200 px-4 py-4 shadow-sm md:px-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              {getBreadcrumbs().map((crumb, idx, arr) => (
+                <div key={crumb.href} className="flex items-center gap-2">
+                  {idx === 0 ? (
+                    <Home className="size-4" />
+                  ) : null}
+                  <Link 
+                    to={crumb.href} 
+                    className={`${idx === arr.length - 1 ? 'text-[#1e3a8a] font-semibold' : 'hover:text-[#1e3a8a] transition-colors'}`}
+                  >
+                    {crumb.name}
+                  </Link>
+                  {idx < arr.length - 1 && <ChevronRight className="size-4" />}
                 </div>
+              ))}
+            </div>
+            
+            <div className="hidden md:flex items-center gap-4">
+              <div className="flex items-center gap-2 text-xs">
+                <Award className="size-4 text-blue-600" />
+                <span className="text-gray-600">Citizen ID:</span>
+                <span className="font-mono font-semibold text-gray-900">
+                  {user?.id ? user.id.slice(0, 8).toUpperCase() : "SESSION"}
+                </span>
               </div>
             </div>
           </div>
-
-          {/* Content Area */}
-          <div className="flex-1 min-h-0">
-            <Outlet />
-            <GovFooter />
-          </div>
-        </main>
-      </div>
-    </div>
+        </div>
+      }
+      footer={<GovFooter />}
+    >
+      <Outlet />
+    </DashboardLayout>
   );
 }
