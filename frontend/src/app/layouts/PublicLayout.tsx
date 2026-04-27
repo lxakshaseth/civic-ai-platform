@@ -217,8 +217,8 @@ export default function PublicLayout() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-3">
-            <div>
+          <nav className="flex flex-1 flex-col px-3 py-3">
+            <div className="shrink-0">
               <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Main Menu</p>
               <div className="space-y-1">
                 {(isSearching ? filteredNavigation : primaryNavigation).map((item) => {
@@ -267,7 +267,7 @@ export default function PublicLayout() {
             </div>
 
             {!isSearching && (
-              <div className="mt-3 flex flex-1 flex-col">
+              <div className="mt-3 space-y-2.5">
                 <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-2.5">
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Important Tools</p>
@@ -300,7 +300,7 @@ export default function PublicLayout() {
                   </div>
                 </div>
 
-                <div className="mt-2.5 rounded-2xl border border-gray-200 bg-gray-50/80 p-2.5">
+                <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-2.5">
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Quick Actions</p>
                     <Badge className="border border-gray-200 bg-white text-gray-700 shadow-none">2 Tools</Badge>
@@ -320,7 +320,7 @@ export default function PublicLayout() {
                   </div>
                 </div>
 
-                <div className="mt-2.5 flex min-h-[72px] flex-1 flex-col justify-between rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-cyan-50 p-3">
+                <div className="flex min-h-[72px] flex-col justify-between rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-cyan-50 p-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Support</p>
                     <h3 className="mt-1 text-sm font-bold text-gray-900">Citizen help is ready</h3>
