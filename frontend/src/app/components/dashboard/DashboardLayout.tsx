@@ -93,6 +93,16 @@ export function DashboardLayout({
   const [desktopTopOffset, setDesktopTopOffset] = useState(0);
 
   useEffect(() => {
+    document.documentElement.classList.add("dashboard-scroll-lock");
+    document.body.classList.add("dashboard-scroll-lock");
+
+    return () => {
+      document.documentElement.classList.remove("dashboard-scroll-lock");
+      document.body.classList.remove("dashboard-scroll-lock");
+    };
+  }, []);
+
+  useEffect(() => {
     const shellElement = shellRef.current;
 
     if (!shellElement) {
