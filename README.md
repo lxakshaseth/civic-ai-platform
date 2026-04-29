@@ -1,89 +1,246 @@
-# SAIP Citizen Grievance Management System
+<!-- ===================== HERO ===================== -->
 
-SAIP is a full-stack citizen grievance management system built for public service workflows. It connects citizens, field employees, and administrators through a shared complaint lifecycle that supports filing, assignment, work updates, verification, and public transparency.
+<p align="center">
+  <img src="docs/images/dashboard.png" width="100%" />
+</p>
 
-## Frontend Overview
+<h1 align="center">🚀 Smart AI Civic Intelligence Platform (SAIP)</h1>
 
-The frontend lives in `frontend` and is built with Next.js, React, and TypeScript. It provides three role-based experiences:
+<p align="center">
+  <strong>AI-powered governance system for transparent, efficient, and intelligent civic management</strong>
+</p>
 
-- Citizen portal for filing complaints, checking status, viewing progress, accessing emergency and service guidance, and interacting with the AI assistant.
-- Employee portal for managing assigned complaints, viewing routes, uploading work proof, adding invoice details, and updating citizens.
-- Admin portal for operations monitoring, complaint approvals, audits, fraud review, broadcast drafting, reporting, and city-wide dashboards.
+<p align="center">
+  <a href="https://civic-ai-platform-frontend-t1zc.vercel.app/">
+    <img src="https://img.shields.io/badge/🚀 Live Demo-2563EB?style=for-the-badge" />
+  </a>
+  <img src="https://img.shields.io/badge/AI-Powered-9333EA?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Microservices-059669?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Production-Ready-F59E0B?style=for-the-badge" />
+</p>
 
-Key frontend responsibilities include:
+---
 
-- Complaint filing with photo evidence, structured address capture, pincode support, and GPS location.
-- Complaint detail views with timelines, work proof, invoice documents, ticketing, feedback, and reopen flows.
-- Shared citizen-employee chat with voice notes and translation support.
-- AI assistant screens for citizen help, employee field support, and admin planning support.
-- Transparency and analytics views for public and internal monitoring.
+## 🌍 Problem
 
-## Backend Overview
+Modern civic systems suffer from:
 
-The backend is centered around `apps/api`, a TypeScript and Express API designed around modular service layers. It manages the core operational workflows and integrations used by the frontend.
+* ❌ Delayed complaint resolution
+* ❌ Lack of transparency
+* ❌ Poor citizen engagement
+* ❌ No intelligent data usage
 
-Main backend responsibilities include:
+---
 
-- Authentication and role-based access control.
-- Complaint intake, assignment, lifecycle updates, and reopen handling.
-- Evidence upload, work proof storage, invoice metadata capture, and audit records.
-- Citizen-employee chat, notifications, tickets, and complaint activity history.
-- Fraud review, analytics, emergency support data, and administrative reporting.
-- External integrations for maps, translation, AI support, and realtime messaging.
+## 💡 Solution
 
-The repository also includes `apps/ai-service`, a FastAPI-based companion service used for AI-related tasks such as complaint classification, priority support, OCR, and chatbot responses.
+SAIP is a **full-stack AI-powered civic platform** that transforms complaints into:
 
-## Features Explanation
+* 📊 Actionable insights
+* ⚡ Faster resolution workflows
+* 🔍 Transparent governance
 
-### Citizen Features
+---
 
-- File complaints with title, description, address, pincode, GPS, and photo evidence.
-- View complaint status, assignment progress, work updates, and closure details.
-- Chat with the assigned employee when a complaint is active.
-- Review work proof and invoice documents shared during resolution.
-- Raise quality or fraud tickets, submit feedback, and reopen unresolved complaints.
-- Use the AI assistant for complaint guidance, nearby issue discovery, service help, and emergency support.
+## 🖥️ Live Demo
 
-### Employee Features
+<p align="center">
+  <a href="https://civic-ai-platform-frontend-t1zc.vercel.app/">
+    <img src="docs/images/dashboard.png" width="85%" />
+  </a>
+</p>
 
-- View assigned complaints and manage task status from a live queue.
-- Use map-based views and AI assistance for route and task planning.
-- Upload after-work photos, work notes, invoice documents, labour details, materials used, and closure GPS.
-- Communicate with citizens through the complaint conversation workspace.
-- Track personal performance, notifications, and task completion progress.
+👉 Click the image above to explore the live application
 
-### Admin Features
+---
 
-- Monitor complaint operations, departments, employees, and city-wide service trends.
-- Review complaint evidence, work proof, invoice documents, and ticket escalations.
-- Approve or reject closure submissions and maintain audit-ready records.
-- Use AI support for planning, staffing, compliance summaries, and citizen advisories.
-- Publish public notices through the broadcast workflow and generate executive-facing reports.
+## 🖼️ Application Preview
 
-### Shared Platform Capabilities
+### 📊 Dashboard Overview
 
-- Role-based portals for citizens, employees, and administrators.
-- Structured complaint workflow from submission to resolution.
-- Multilingual support across chat and AI guidance.
-- Audit-oriented data capture for work completion and verification.
-- Dashboards for transparency, analytics, and service monitoring.
+<p align="center">
+  <img src="docs/images/hero.png" width="85%" />
+</p>
 
-## Workspace Structure
+---
+
+### 📝 Complaint Submission (AI Powered)
+
+<p align="center">
+  <img src="docs/images/complaint.png" width="85%" />
+</p>
+
+---
+
+### 🤖 AI Assistant
+
+<p align="center">
+  <img src="docs/images/assisstant.png" width="85%" />
+</p>
+
+---
+
+## 🧠 Key Features
+
+### 👤 Multi-Role System
+
+* Citizen / Officer / Admin dashboards
+* Secure JWT authentication
+* Role-Based Access Control (RBAC)
+
+---
+
+### 📍 Smart Complaint System
+
+* Location-based complaint submission
+* Image + text input
+* AI categorization & urgency detection
+* Status tracking timeline
+
+---
+
+### 🤖 AI Intelligence Layer
+
+* NLP-based classification
+* Priority scoring
+* Smart routing system
+
+---
+
+### 📊 Analytics Dashboard
+
+* Complaint trends
+* Department performance
+* Resolution metrics
+
+---
+
+### 🚨 Fraud Detection
+
+* Spam complaint filtering
+* Pattern-based anomaly detection
+
+---
+
+## 🏗️ System Architecture
 
 ```text
-.
-|-- frontend          # Next.js role-based user interface
-|-- apps
-|   |-- api           # Express + TypeScript API
-|   `-- ai-service    # FastAPI AI companion service
-|-- docs              # Supporting architecture and implementation docs
-|-- package.json      # Workspace scripts
-`-- turbo.json        # Monorepo task orchestration
+Client (Web App)
+   ↓
+Frontend (React + TypeScript + Tailwind)
+   ↓
+Backend API (Node.js + Express)
+   ↓
+Core Services (Auth, Complaint, Analytics)
+   ↓
+AI Microservice (Python + FastAPI)
+   ↓
+PostgreSQL + Redis
+   ↓
+Queue + Notifications
 ```
 
-## Deployment Notes
+---
 
-- Root `npm run build` now verifies both the Next.js frontend in `frontend` and the API in `apps/api`.
-- Copy [`.env.example`](C:\Users\ADMIN\Desktop\IEEE\.env.example) for shared deployment values, then use [frontend/.env.example](C:\Users\ADMIN\Desktop\IEEE\frontend\.env.example) and [apps/api/.env.example](C:\Users\ADMIN\Desktop\IEEE\apps\api\.env.example) for service-specific values.
-- Production deployments must provide a real `DATABASE_URL` and a strong `JWT_SECRET` or explicit `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET`.
-- Redis-backed queues degrade safely when Redis is unavailable, but background jobs will remain disabled until `REDIS_URL` is reachable.
+## 🔄 Data Flow
+
+1. User submits complaint
+2. Backend stores request
+3. AI service processes:
+
+   * Category
+   * Priority
+4. Complaint assigned automatically
+5. Dashboard updates
+
+---
+
+## 📁 Project Structure
+
+```bash
+apps/
+  ├── ai-service/
+  ├── api/
+  ├── frontend/
+docs/
+  └── images/
+docker-compose.yml
+turbo.json
+```
+
+---
+
+## 🛠️ Tech Stack
+
+### 🎨 Frontend
+
+* React with TypeScript
+* Tailwind CSS
+* Component-driven architecture
+* Responsive dashboard UI
+
+### ⚙️ Backend
+
+* Node.js
+* Express.js
+* JWT Authentication
+* RBAC (Role-Based Access Control)
+
+### 🧠 AI Layer
+
+* Python
+* FastAPI
+* NLP-based classification
+
+### 🗄️ Database
+
+* PostgreSQL
+* Redis (caching & queue)
+
+### 🐳 DevOps
+
+* Docker
+* Vercel (frontend deployment)
+
+---
+
+## ⚙️ Engineering Highlights
+
+* Microservices architecture
+* AI-integrated backend pipeline
+* Type-safe frontend using TypeScript
+* Real-time capable system design
+* Scalable modular architecture
+
+---
+
+## 🌟 Why This Project Stands Out
+
+* 🏛 Government-level system design
+* 🧠 AI + Backend integration
+* 📊 Real-world problem solving
+* ⚙️ Production-ready architecture
+
+---
+
+## 🚀 Future Scope
+
+* IoT integration (traffic, pollution sensors)
+* Multi-city deployment
+* Blockchain-based transparency
+
+---
+
+## 🤝 Contribution
+
+Open for collaboration on:
+
+* Backend systems
+* AI integrations
+* System design
+
+---
+
+<p align="center">
+  <strong>✨ Building systems that create real-world impact ✨</strong>
+</p>
