@@ -633,7 +633,7 @@ export class ComplaintsService {
 
   async completeComplaint(
     id: string,
-    data: CompleteComplaintInput,
+    data: CompleteComplaintInput,  // error solve
     actor: Actor,
     proofImages: Express.Multer.File[] = [],
     invoiceFile?: Express.Multer.File,
