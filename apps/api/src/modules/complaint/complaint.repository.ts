@@ -202,51 +202,80 @@ export class ComplaintsRepository {
     }>;
   }) {
     const { complaintImages, ...complaintData } = data;
-
-    return prisma.complaint.create({
-      data: {
-        ...complaintData,
-        status: ComplaintStatus.SUBMITTED,
-        lastStatusChangedAt: new Date(),
-        statusHistory: {
-          create: {
-            status: ComplaintStatus.SUBMITTED,
-            changedById: data.citizenId,
-            note: "Complaint submitted"
-          }
-        },
-        timelineEntries: {
-          create: {
-            eventType: "complaint.created",
-            title: "Complaint created",
-            description: "Complaint submitted by citizen",
-            createdById: data.citizenId,
-            metadata: {
-              status: ComplaintStatus.SUBMITTED,
-              duplicateScore: data.duplicateScore ?? null,
-              fraudScore: data.fraudScore ?? null,
-              isSuspicious: data.isSuspicious ?? false,
-              fraudSignals: data.fraudSignals ?? null
-            }
-          }
-        },
-        ...(complaintImages?.length
-          ? {
-              evidenceItems: {
-                create: complaintImages.map((item) => ({
-                  uploadedById: item.uploadedById,
-                  type: "BEFORE",
-                  fileName: item.fileName,
-                  filePath: item.filePath,
-                  mimeType: item.mimeType,
-                  fileSize: item.fileSize,
-                  note: item.note
-                }))
+    const createInput: Prisma.ComplaintCreateInput = {
+      ...complaintData,
+      status: ComplaintStatus.SUBMITTED,
+      lastStatusChangedAt: new Date(),
+      citizen: {
+        connect: {
+          id: data.citizenId
+        }
+      },
+      ...(data.departmentId
+        ? {
+            department: {
+              connect: {
+                id: data.departmentId
               }
             }
-          : {})
+          }
+        : {}),
+      statusHistory: {
+        create: {
+          status: ComplaintStatus.SUBMITTED,
+          changedBy: {
+            connect: {
+              id: data.citizenId
+            }
+          },
+          note: "Complaint submitted"
+        }
       },
-      include: complaintDetailInclude
+      timelineEntries: {
+        create: {
+          eventType: "complaint.created",
+          title: "Complaint created",
+          description: "Complaint submitted by citizen",
+          createdBy: {
+            connect: {
+              id: data.citizenId
+            }
+          },
+          metadata: {
+            status: ComplaintStatus.SUBMITTED,
+            duplicateScore: data.duplicateScore ?? null,
+            fraudScore: data.fraudScore ?? null,
+            isSuspicious: data.isSuspicious ?? false,
+            fraudSignals: data.fraudSignals ?? null
+          }
+        }
+      },
+      ...(complaintImages?.length
+        ? {
+            evidenceItems: {
+              create: complaintImages.map((item) => ({
+                uploadedBy: {
+                  connect: {
+                    id: item.uploadedById
+                  }
+                },
+                type: "BEFORE",
+                fileName: item.fileName,
+                filePath: item.filePath,
+                mimeType: item.mimeType,
+                fileSize: item.fileSize,
+                note: item.note
+              }))
+            }
+          }
+        : {})
+    };
+
+    return prisma.complaint.create({
+      data: createInput,
+      select: {
+        id: true
+      }
     });
   }
 

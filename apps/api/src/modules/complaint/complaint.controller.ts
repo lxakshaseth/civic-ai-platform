@@ -61,9 +61,9 @@ export class ComplaintsController {
       }
     );
 
-    return sendSuccess(res, StatusCodes.CREATED, {
-      message: "Complaint created",
-      data: complaint
+    return res.status(StatusCodes.CREATED).json({
+      success: true,
+      id: complaint.id
     });
   }
 

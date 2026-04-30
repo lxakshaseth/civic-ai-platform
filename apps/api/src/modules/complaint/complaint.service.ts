@@ -1,4 +1,4 @@
-import { ComplaintStatus, UserRole } from "@prisma/client";
+import { ComplaintStatus, Prisma, UserRole } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
 
 import { queueNotificationJob } from "queues/jobs/notification.job";
@@ -263,6 +263,21 @@ export class ComplaintsService {
     files: Express.Multer.File[] = [],
     requestContext?: ComplaintRequestContext
   ) {
+    const title = data.title?.trim();
+    const description = data.description?.trim();
+
+    if (!title || title.length < 5) {
+      throw new AppError("Title is required", StatusCodes.BAD_REQUEST, "INVALID_COMPLAINT_TITLE");
+    }
+
+    if (!description || description.length < 10) {
+      throw new AppError(
+        "Description is required",
+        StatusCodes.BAD_REQUEST,
+        "INVALID_COMPLAINT_DESCRIPTION"
+      );
+    }
+
     if (!files.length) {
       throw new AppError(
         "At least one complaint image is required",
@@ -271,67 +286,126 @@ export class ComplaintsService {
       );
     }
 
-    const analysis = this.analyzeComplaintDraft({
-      title: data.title,
-      description: data.description
-    });
-    const structuredAddress = normalizeStructuredAddress(data.structuredAddress);
-    const fullAddress = (data.locationAddress?.trim() || buildFullAddress(structuredAddress)).trim();
-    const pincode =
-      data.pincode?.trim() ||
-      structuredAddress?.pincode ||
-      fullAddress.match(/\b\d{6}\b/)?.[0] ||
-      null;
-    const category = data.category?.trim() || analysis.category;
-    const priority = normalizePriority(data.priority ?? derivePriorityFromUrgency(analysis.urgency));
-    const departmentId = await this.resolveDepartmentId(data.departmentId, data.departmentName ?? analysis.department);
+    const actorProfile = await this.complaintsRepository.findActorProfile(citizenId);
+    if (!actorProfile) {
+      throw new AppError("User not found", StatusCodes.NOT_FOUND, "USER_NOT_FOUND");
+    }
 
-    logger.info(
-      {
-        citizenId,
+    try {
+      const analysis = this.analyzeComplaintDraft({
+        title,
+        description
+      });
+      const structuredAddress = normalizeStructuredAddress(data.structuredAddress);
+      const fullAddress = (data.locationAddress?.trim() || buildFullAddress(structuredAddress)).trim();
+
+      if (!fullAddress) {
+        throw new AppError(
+          "Location address is required",
+          StatusCodes.BAD_REQUEST,
+          "INVALID_COMPLAINT_ADDRESS"
+        );
+      }
+
+      const pincode =
+        data.pincode?.trim() ||
+        structuredAddress?.pincode ||
+        fullAddress.match(/\b\d{6}\b/)?.[0] ||
+        null;
+      const category = data.category?.trim() || analysis.category || "General";
+      const priority = normalizePriority(data.priority ?? derivePriorityFromUrgency(analysis.urgency));
+      const departmentId = await this.resolveDepartmentId(
+        data.departmentId,
+        data.departmentName ?? analysis.department
+      );
+
+      logger.info(
+        {
+          citizenId,
+          category,
+          departmentId,
+          pincode,
+          imageCount: files.length,
+          ipAddress: requestContext?.ipAddress,
+          userAgent: requestContext?.userAgent
+        },
+        "Creating complaint with Prisma"
+      );
+
+      const createdComplaint = await this.complaintsRepository.createComplaint({
+        title,
+        description,
+        issueType: analysis.issueType || category,
+        urgencyScore: Number.isFinite(analysis.urgency) ? analysis.urgency : 68,
+        tags: sanitizeTags(analysis.suggestions.tags),
+        structuredAddress: structuredAddress ?? undefined,
         category,
+        priority: priority.toUpperCase(),
+        locationAddress: fullAddress,
+        latitude: data.latitude ?? undefined,
+        longitude: data.longitude ?? undefined,
         departmentId,
-        pincode,
-        imageCount: files.length,
-        ipAddress: requestContext?.ipAddress,
-        userAgent: requestContext?.userAgent
-      },
-      "Creating complaint with Prisma"
-    );
+        imagePath: files[0]?.path.replace(/\\/g, "/") || undefined,
+        citizenId: actorProfile.id,
+        aiCategory: analysis.category || category,
+        aiPriority: priority.toUpperCase(),
+        aiConfidence: 0.8,
+        duplicateScore: 0,
+        fraudScore: 0,
+        isSuspicious: false,
+        complaintImages: files.map((file, index) => ({
+          uploadedById: actorProfile.id,
+          fileName: file.originalname?.trim() || `complaint-image-${index + 1}`,
+          filePath: file.path.replace(/\\/g, "/"),
+          mimeType: file.mimetype || "application/octet-stream",
+          fileSize: Number.isFinite(file.size) ? file.size : 0,
+          note: index === 0 ? "Complaint submitted" : undefined
+        }))
+      });
 
-    const createdComplaint = await this.complaintsRepository.createComplaint({
-      title: data.title.trim(),
-      description: data.description.trim(),
-      issueType: analysis.issueType,
-      urgencyScore: analysis.urgency,
-      tags: analysis.suggestions.tags,
-      structuredAddress,
-      category,
-      priority: priority.toUpperCase(),
-      locationAddress: fullAddress || null,
-      latitude: data.latitude,
-      longitude: data.longitude,
-      departmentId,
-      imagePath: files[0]?.path.replace(/\\/g, "/"),
-      citizenId,
-      aiCategory: analysis.category,
-      aiPriority: priority.toUpperCase(),
-      aiConfidence: 0.8,
-      complaintImages: files.map((file, index) => ({
-        uploadedById: citizenId,
-        fileName: file.originalname,
-        filePath: file.path.replace(/\\/g, "/"),
-        mimeType: file.mimetype,
-        fileSize: file.size,
-        note: index === 0 ? "Complaint submitted" : undefined
-      }))
-    });
+      return {
+        id: createdComplaint.id
+      };
+    } catch (error) {
+      console.error("FULL ERROR:", error);
+      logger.error(
+        {
+          error,
+          citizenId,
+          ipAddress: requestContext?.ipAddress,
+          userAgent: requestContext?.userAgent
+        },
+        "Complaint creation failed"
+      );
 
-    return this.mapPrismaComplaintRecord(createdComplaint, {
-      id: citizenId,
-      email: "",
-      role: UserRole.CITIZEN
-    });
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === "P2003") {
+          throw new AppError(
+            "Complaint references invalid related data",
+            StatusCodes.BAD_REQUEST,
+            "INVALID_COMPLAINT_RELATION"
+          );
+        }
+
+        if (error.code === "P2025") {
+          throw new AppError(
+            "Complaint references a missing user or department",
+            StatusCodes.BAD_REQUEST,
+            "COMPLAINT_RELATION_NOT_FOUND"
+          );
+        }
+      }
+
+      throw new AppError(
+        "Unable to create complaint",
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "COMPLAINT_CREATE_FAILED"
+      );
+    }
   }
 
   listComplaints(
