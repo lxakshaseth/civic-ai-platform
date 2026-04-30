@@ -278,14 +278,6 @@ export class ComplaintsService {
       );
     }
 
-    if (!files.length) {
-      throw new AppError(
-        "At least one complaint image is required",
-        StatusCodes.BAD_REQUEST,
-        "COMPLAINT_IMAGE_REQUIRED"
-      );
-    }
-
     const actorProfile = await this.complaintsRepository.findActorProfile(citizenId);
     if (!actorProfile) {
       throw new AppError("User not found", StatusCodes.NOT_FOUND, "USER_NOT_FOUND");
@@ -322,6 +314,7 @@ export class ComplaintsService {
       logger.info(
         {
           citizenId,
+          contentType: requestContext ? "multipart-or-json" : undefined,
           category,
           departmentId,
           pincode,
@@ -345,7 +338,7 @@ export class ComplaintsService {
         latitude: data.latitude ?? undefined,
         longitude: data.longitude ?? undefined,
         departmentId,
-        imagePath: files[0]?.path.replace(/\\/g, "/") || undefined,
+        imagePath: files[0]?.path?.replace(/\\/g, "/") || undefined,
         citizenId: actorProfile.id,
         aiCategory: analysis.category || category,
         aiPriority: priority.toUpperCase(),
@@ -353,14 +346,16 @@ export class ComplaintsService {
         duplicateScore: 0,
         fraudScore: 0,
         isSuspicious: false,
-        complaintImages: files.map((file, index) => ({
-          uploadedById: actorProfile.id,
-          fileName: file.originalname?.trim() || `complaint-image-${index + 1}`,
-          filePath: file.path.replace(/\\/g, "/"),
-          mimeType: file.mimetype || "application/octet-stream",
-          fileSize: Number.isFinite(file.size) ? file.size : 0,
-          note: index === 0 ? "Complaint submitted" : undefined
-        }))
+        complaintImages: files.length
+          ? files.map((file, index) => ({
+              uploadedById: actorProfile.id,
+              fileName: file.originalname?.trim() || `complaint-image-${index + 1}`,
+              filePath: file.path.replace(/\\/g, "/"),
+              mimeType: file.mimetype || "application/octet-stream",
+              fileSize: Number.isFinite(file.size) ? file.size : 0,
+              note: index === 0 ? "Complaint submitted" : undefined
+            }))
+          : undefined
       });
 
       return {

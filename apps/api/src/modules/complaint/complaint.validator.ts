@@ -4,6 +4,18 @@ import { z } from "zod";
 const emptyStringToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
 
+const optionalTrimmedText = (min: number, max: number) =>
+  z.preprocess(emptyStringToUndefined, z.string().trim().min(min).max(max).optional());
+
+const optionalUuid = () =>
+  z.preprocess(emptyStringToUndefined, z.string().uuid().optional());
+
+const optionalNumber = () =>
+  z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().refine((value) => Number.isFinite(value), "Invalid number").optional()
+  );
+
 const structuredAddressSchema = z.preprocess(
   (value) => {
     if (typeof value !== "string") {
@@ -83,21 +95,21 @@ export const nearbyComplaintsQuerySchema = z.object({
 });
 
 export const createComplaintSchema = z.object({
-  title: z.string().min(5).max(160),
-  description: z.string().min(10).max(2000),
-  category: z.string().trim().min(2).max(120).optional(),
-  priority: z.string().trim().max(50).optional(),
-  departmentName: z.string().trim().min(2).max(120).optional(),
+  title: z.string().trim().min(5).max(160),
+  description: z.string().trim().min(10).max(2000),
+  category: optionalTrimmedText(2, 120),
+  priority: z.preprocess(emptyStringToUndefined, z.string().trim().max(50).optional()),
+  departmentName: optionalTrimmedText(2, 120),
   pincode: z
     .preprocess(
       emptyStringToUndefined,
       z.string().trim().regex(/^\d{6}$/, "Pincode must be a valid 6-digit value").optional()
     ),
-  locationAddress: z.string().min(3).max(255).optional(),
+  locationAddress: optionalTrimmedText(3, 255),
   structuredAddress: structuredAddressSchema,
-  latitude: z.coerce.number().optional(),
-  longitude: z.coerce.number().optional(),
-  departmentId: z.string().uuid().optional()
+  latitude: optionalNumber(),
+  longitude: optionalNumber(),
+  departmentId: optionalUuid()
 }).superRefine((value, ctx) => {
   if ((value.latitude == null) !== (value.longitude == null)) {
     ctx.addIssue({
