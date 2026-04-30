@@ -4,4 +4,4 @@ const Module = require("node:module");
 process.env.NODE_PATH = path.resolve(__dirname, "dist");
 Module.Module._initPaths();
 
-require("./dist/server.js");
+require("./dist/main.js");

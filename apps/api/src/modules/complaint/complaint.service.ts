@@ -543,7 +543,7 @@ export class ComplaintsService {
     data: CreateComplaintInput,
     citizenId: string,
     files: Express.Multer.File[] = [],
-    _requestContext?: ComplaintRequestContext
+    requestContext?: ComplaintRequestContext
   ) {
     if (!files.length) {
       throw new AppError(
@@ -553,113 +553,148 @@ export class ComplaintsService {
       );
     }
 
-    const analysis = this.analyzeComplaintDraft({
-      title: data.title,
-      description: data.description
-    });
-    const structuredAddress = normalizeStructuredAddress(data.structuredAddress);
-    const fullAddress = (data.locationAddress?.trim() || buildFullAddress(structuredAddress)).trim();
-    const pincode =
-      data.pincode?.trim() ||
-      structuredAddress?.pincode ||
-      fullAddress.match(/\b\d{6}\b/)?.[0] ||
-      null;
-    const category = data.category?.trim() || analysis.category;
-    const department = data.departmentName?.trim() || analysis.department;
-    const priority = normalizePriority(data.priority ?? derivePriorityFromUrgency(analysis.urgency));
+    try {
+      const analysis = this.analyzeComplaintDraft({
+        title: data.title,
+        description: data.description
+      });
+      const structuredAddress = normalizeStructuredAddress(data.structuredAddress);
+      const fullAddress = (data.locationAddress?.trim() || buildFullAddress(structuredAddress)).trim();
+      const pincode =
+        data.pincode?.trim() ||
+        structuredAddress?.pincode ||
+        fullAddress.match(/\b\d{6}\b/)?.[0] ||
+        null;
+      const category = data.category?.trim() || analysis.category;
+      const department = data.departmentName?.trim() || analysis.department;
+      const priority = normalizePriority(data.priority ?? derivePriorityFromUrgency(analysis.urgency));
+      const primaryImagePath = files[0]?.path.replace(/\\/g, "/") ?? null;
 
-    const created = await queryCivicPlatform<{ id: string }>(
-      `
-        INSERT INTO public.complaints (
-          title,
-          description,
-          issue_type,
-          urgency_score,
-          tags,
-          structured_address,
+      logger.info(
+        {
+          citizenId,
+          title: data.title.trim(),
           category,
           department,
-          citizen_id,
           priority,
           pincode,
-          location_address,
-          latitude,
-          longitude,
-          image_url,
-          status,
-          created_at,
-          updated_at
-        )
-        VALUES (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6::jsonb,
-          $7,
-          $8,
-          $9,
-          $10,
-          $11,
-          $12,
-          $13,
-          $14,
-          $15,
-          'OPEN',
-          CURRENT_TIMESTAMP,
-          CURRENT_TIMESTAMP
-        )
-        RETURNING id
-      `,
-      [
-        data.title.trim(),
-        data.description.trim(),
-        analysis.issueType,
-        analysis.urgency,
-        analysis.suggestions.tags,
-        structuredAddress ? JSON.stringify(structuredAddress) : null,
-        category,
-        department,
-        citizenId,
-        priority,
-        pincode,
-        fullAddress || null,
-        data.latitude ?? null,
-        data.longitude ?? null,
-        files[0]?.path.replace(/\\/g, "/") ?? null
-      ]
-    );
-
-    const createdComplaintId = created.rows[0]?.id;
-
-    if (!createdComplaintId) {
-      throw new AppError(
-        "Complaint was created but no complaint id was returned",
-        StatusCodes.INTERNAL_SERVER_ERROR,
-        "COMPLAINT_ID_MISSING"
+          hasStructuredAddress: Boolean(structuredAddress),
+          hasCoordinates: data.latitude != null && data.longitude != null,
+          imageCount: files.length,
+          primaryImagePath,
+          ipAddress: requestContext?.ipAddress,
+          userAgent: requestContext?.userAgent
+        },
+        "Creating complaint"
       );
-    }
 
-    try {
-      return await this.getComplaintDtoOrThrow(createdComplaintId, {
-        id: citizenId,
-        email: "",
-        role: UserRole.CITIZEN
-      });
+      const created = await queryCivicPlatform<{ id: string }>(
+        `
+          INSERT INTO public.complaints (
+            title,
+            description,
+            issue_type,
+            urgency_score,
+            tags,
+            structured_address,
+            category,
+            department,
+            citizen_id,
+            priority,
+            pincode,
+            location_address,
+            latitude,
+            longitude,
+            image_url,
+            status,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            $6::jsonb,
+            $7,
+            $8,
+            $9,
+            $10,
+            $11,
+            $12,
+            $13,
+            $14,
+            $15,
+            'OPEN',
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+          )
+          RETURNING id
+        `,
+        [
+          data.title.trim(),
+          data.description.trim(),
+          analysis.issueType,
+          analysis.urgency,
+          analysis.suggestions.tags,
+          structuredAddress ? JSON.stringify(structuredAddress) : null,
+          category,
+          department,
+          citizenId,
+          priority,
+          pincode,
+          fullAddress || null,
+          data.latitude ?? null,
+          data.longitude ?? null,
+          primaryImagePath
+        ]
+      );
+
+      const createdComplaintId = created.rows[0]?.id;
+
+      if (!createdComplaintId) {
+        throw new AppError(
+          "Complaint was created but no complaint id was returned",
+          StatusCodes.INTERNAL_SERVER_ERROR,
+          "COMPLAINT_ID_MISSING"
+        );
+      }
+
+      try {
+        return await this.getComplaintDtoOrThrow(createdComplaintId, {
+          id: citizenId,
+          email: "",
+          role: UserRole.CITIZEN
+        });
+      } catch (error) {
+        logger.warn(
+          {
+            error,
+            complaintId: createdComplaintId,
+            citizenId
+          },
+          "Complaint was created, but the immediate readback failed. Returning the complaint id only."
+        );
+
+        return {
+          id: createdComplaintId
+        };
+      }
     } catch (error) {
-      logger.warn(
+      logger.error(
         {
           error,
-          complaintId: createdComplaintId,
-          citizenId
+          citizenId,
+          title: data.title?.trim(),
+          pincode: data.pincode?.trim(),
+          imageCount: files.length,
+          ipAddress: requestContext?.ipAddress,
+          userAgent: requestContext?.userAgent
         },
-        "Complaint was created, but the immediate readback failed. Returning the complaint id only."
+        "Complaint creation failed"
       );
-
-      return {
-        id: createdComplaintId
-      };
+      throw error;
     }
   }
 
