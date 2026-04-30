@@ -2,7 +2,7 @@ import { UserRole } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
 import { v4 as uuid } from "uuid";
 
-import { queryCivicPlatform } from "database/clients/civic-platform";
+import { ensureCivicPlatformSchemaReady, queryCivicPlatform } from "database/clients/civic-platform";
 import { queueAuditLogJob } from "queues/jobs/audit.job";
 import { AppError } from "shared/errors/app-error";
 import { toPublicUploadPath } from "utils/uploads";
@@ -49,6 +49,8 @@ export class SanitaryService {
     file?: Express.Multer.File,
     requestContext?: RequestContext
   ) {
+    await ensureCivicPlatformSchemaReady();
+
     if (actor.role !== UserRole.CITIZEN) {
       throw new AppError("Forbidden", StatusCodes.FORBIDDEN, "FORBIDDEN");
     }

@@ -5,6 +5,7 @@ import { logger } from "utils/logger";
 
 const globalForCivicPlatform = globalThis as unknown as {
   civicPlatformPool?: Pool;
+  civicPlatformSchemaPromise?: Promise<void>;
 };
 
 function resolveCivicPlatformDatabaseUrl() {
@@ -135,6 +136,24 @@ const bootstrapStatements = [
   `ALTER TABLE public.users ADD COLUMN IF NOT EXISTS refresh_token_hash TEXT`,
   `ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
   `ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS citizen_id UUID`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS citizen_name TEXT`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS upi_id TEXT`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS amount NUMERIC(12, 2) NOT NULL DEFAULT 0`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'pending'`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS transaction_id TEXT`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS invoice_number TEXT`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS vendor_name TEXT`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS bill_file_path TEXT`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS review_note TEXT`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS fraud_reason TEXT`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS applied_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITHOUT TIME ZONE`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP WITHOUT TIME ZONE`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP WITHOUT TIME ZONE`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS flagged_at TIMESTAMP WITHOUT TIME ZONE`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE public.sanitary_reimbursement_requests ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
   `ALTER TABLE public.complaints ADD COLUMN IF NOT EXISTS title TEXT`,
   `ALTER TABLE public.complaints ADD COLUMN IF NOT EXISTS description TEXT`,
   `ALTER TABLE public.complaints ADD COLUMN IF NOT EXISTS issue_type TEXT`,
@@ -340,4 +359,17 @@ export async function ensureCivicPlatformSchema() {
       created_at = COALESCE(created_at, CURRENT_TIMESTAMP),
       updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)
   `);
+}
+
+export function ensureCivicPlatformSchemaReady() {
+  if (!globalForCivicPlatform.civicPlatformSchemaPromise) {
+    globalForCivicPlatform.civicPlatformSchemaPromise = ensureCivicPlatformSchema().catch(
+      (error) => {
+        globalForCivicPlatform.civicPlatformSchemaPromise = undefined;
+        throw error;
+      }
+    );
+  }
+
+  return globalForCivicPlatform.civicPlatformSchemaPromise;
 }

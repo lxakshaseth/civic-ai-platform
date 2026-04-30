@@ -24,6 +24,7 @@ export type AuthSession = {
   refreshToken?: string | null;
   token?: string | null;
   user: SessionUser;
+  validatedAt?: number;
 };
 
 const AUTH_SESSION_KEY = "saip_auth_session";
@@ -111,6 +112,7 @@ export function writeAuthSession(
 ) {
   const normalizedSession: AuthSession = {
     ...session,
+    validatedAt: session.validatedAt ?? Date.now(),
     user: normalizeSessionUser(session.user),
   };
 

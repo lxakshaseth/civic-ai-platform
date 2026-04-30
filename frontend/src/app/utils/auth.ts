@@ -32,6 +32,7 @@ type RegisterInput = {
 };
 
 const PENDING_ROLE_KEY = "saip_pending_role";
+const AUTH_SESSION_SYNC_MAX_AGE_MS = 5 * 60 * 1000;
 
 function mapPortalRoleToApiRole(role: PortalRole): AuthApiRole {
   if (role === "employee") {
@@ -119,6 +120,13 @@ export async function syncCurrentUser() {
 
   if (!session) {
     return null;
+  }
+
+  if (
+    typeof session.validatedAt === "number" &&
+    Date.now() - session.validatedAt < AUTH_SESSION_SYNC_MAX_AGE_MS
+  ) {
+    return session.user;
   }
 
   try {
