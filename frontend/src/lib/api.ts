@@ -291,5 +291,5 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     );
   }
 
-  return parsedPayload?.data as T;
+  return ((parsedPayload?.data ?? parsedPayload) as T | null) as T;
 }

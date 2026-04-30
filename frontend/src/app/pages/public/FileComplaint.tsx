@@ -18,9 +18,15 @@ import {
 } from "../../components/ui/select";
 import { Textarea } from "../../components/ui/textarea";
 
-type ComplaintCreateResponse = {
-  id: string;
-};
+type ComplaintCreateResponse =
+  | {
+      id?: string;
+      success?: boolean;
+      data?: { id?: string };
+      complaint?: { id?: string };
+    }
+  | undefined
+  | null;
 
 type AddressFormState = {
   houseNo: string;
@@ -253,13 +259,22 @@ export default function FileComplaint() {
 
       payload.append("images", image);
 
-      const complaint = await apiRequest<ComplaintCreateResponse>("/complaints", {
+      const res = await apiRequest<ComplaintCreateResponse>("/complaints", {
         method: "POST",
         body: payload
       });
 
+      console.log("API RESPONSE:", res);
+
+      const complaintId = res?.id ?? res?.data?.id ?? res?.complaint?.id;
+
+      if (!complaintId) {
+        toast.error("Complaint was submitted, but the complaint ID was missing from the response.");
+        return;
+      }
+
       toast.success("Complaint successfully filed and sent to the admin queue.");
-      navigate(`/public/complaint/${complaint.id}`);
+      navigate(`/public/complaint/${complaintId}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Complaint could not be submitted.");
     } finally {
