@@ -84,6 +84,8 @@ model Department {
   feedbacks   ComplaintFeedback[]
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
+
+  @@map("Department")
 }
 
 model User {
@@ -171,6 +173,7 @@ model Complaint {
   @@index([departmentId, status])
   @@index([assignedEmployeeId, status])
   @@index([isSuspicious, fraudScore])
+  @@map("Complaint")
 }
 
 model ComplaintAssignment {
@@ -185,6 +188,8 @@ model ComplaintAssignment {
   assignedBy    User        @relation("AssignedByUsers", fields: [assignedById], references: [id])
   note          String?
   createdAt     DateTime    @default(now())
+
+  @@map("ComplaintAssignment")
 }
 
 model ComplaintStatusLog {
@@ -196,6 +201,8 @@ model ComplaintStatusLog {
   changedById String?
   changedBy   User?           @relation(fields: [changedById], references: [id])
   createdAt   DateTime        @default(now())
+
+  @@map("ComplaintStatusLog")
 }
 
 model Evidence {
@@ -231,6 +238,7 @@ model Evidence {
 
   @@index([complaintId, type])
   @@index([verificationStatus, createdAt])
+  @@map("Evidence")
 }
 
 model ComplaintComment {
@@ -243,6 +251,7 @@ model ComplaintComment {
   createdAt   DateTime  @default(now())
 
   @@index([complaintId, createdAt])
+  @@map("ComplaintComment")
 }
 
 model ComplaintTimelineEntry {
@@ -258,6 +267,7 @@ model ComplaintTimelineEntry {
   createdAt   DateTime  @default(now())
 
   @@index([complaintId, createdAt])
+  @@map("ComplaintTimelineEntry")
 }
 
 model ComplaintFeedback {
@@ -277,6 +287,7 @@ model ComplaintFeedback {
 
   @@index([departmentId, createdAt])
   @@index([officerId, createdAt])
+  @@map("ComplaintFeedback")
 }
 
 model Ticket {
@@ -292,6 +303,7 @@ model Ticket {
   @@index([complaintId, createdAt])
   @@index([raisedById, createdAt])
   @@index([status, createdAt])
+  @@map("Ticket")
 }
 
 model Notification {
@@ -308,6 +320,7 @@ model Notification {
 
   @@index([userId, createdAt])
   @@index([complaintId])
+  @@map("Notification")
 }
 
 model ChatbotKnowledgeEntry {
@@ -323,6 +336,7 @@ model ChatbotKnowledgeEntry {
   updatedAt          DateTime         @updatedAt
 
   @@index([category, createdAt])
+  @@map("ChatbotKnowledgeEntry")
 }
 
 model ChatbotMessage {
@@ -338,6 +352,7 @@ model ChatbotMessage {
 
   @@index([userId, createdAt])
   @@index([knowledgeEntryId])
+  @@map("ChatbotMessage")
 }
 
 model RefreshToken {
@@ -350,6 +365,7 @@ model RefreshToken {
   createdAt  DateTime  @default(now())
 
   @@index([userId, createdAt])
+  @@map("RefreshToken")
 }
 
 model AuditLog {
@@ -366,6 +382,7 @@ model AuditLog {
 
   @@index([entity, entityId, createdAt])
   @@index([userId, createdAt])
+  @@map("AuditLog")
 }
 
 model DailyBoostContent {
@@ -388,6 +405,7 @@ model DailyBoostContent {
 
   @@index([type, mood, language, createdAt])
   @@index([pincode, createdAt])
+  @@map("DailyBoostContent")
 }
 
 model SavedContent {
