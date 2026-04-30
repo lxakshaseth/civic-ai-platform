@@ -297,6 +297,38 @@ const bootstrapDoStatements = [
   `
 ];
 
+const SKIPPABLE_BOOTSTRAP_ERROR_CODES = new Set(["42P01", "42703", "42704"]);
+
+function isSkippableBootstrapError(error: unknown) {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return false;
+  }
+
+  return SKIPPABLE_BOOTSTRAP_ERROR_CODES.has(String(error.code));
+}
+
+async function runBootstrapStatement(statement: string) {
+  if (!civicPlatformPool) {
+    return;
+  }
+
+  try {
+    await civicPlatformPool.query(statement);
+  } catch (error) {
+    if (!isSkippableBootstrapError(error)) {
+      throw error;
+    }
+
+    logger.warn(
+      {
+        error,
+        statement: statement.replace(/\s+/g, " ").trim().slice(0, 240)
+      },
+      "Skipping legacy civic platform bootstrap statement because the target schema object does not exist"
+    );
+  }
+}
+
 export async function ensureCivicPlatformSchema() {
   if (!civicPlatformPool) {
     logger.warn("Skipping PostgreSQL schema bootstrap because DATABASE_URL is invalid or missing.");
@@ -304,14 +336,14 @@ export async function ensureCivicPlatformSchema() {
   }
 
   for (const statement of bootstrapStatements) {
-    await civicPlatformPool.query(statement);
+    await runBootstrapStatement(statement);
   }
 
   for (const statement of bootstrapDoStatements) {
-    await civicPlatformPool.query(statement);
+    await runBootstrapStatement(statement);
   }
 
-  await civicPlatformPool.query(`
+  await runBootstrapStatement(`
     UPDATE public.users
     SET
       role = COALESCE(NULLIF(BTRIM(role), ''), 'CITIZEN'),
@@ -322,7 +354,7 @@ export async function ensureCivicPlatformSchema() {
       created_at = COALESCE(created_at, CURRENT_TIMESTAMP)
   `);
 
-  await civicPlatformPool.query(`
+  await runBootstrapStatement(`
     UPDATE public.complaints
     SET
       status = COALESCE(NULLIF(BTRIM(status), ''), 'OPEN'),
@@ -341,7 +373,7 @@ export async function ensureCivicPlatformSchema() {
       updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)
   `);
 
-  await civicPlatformPool.query(`
+  await runBootstrapStatement(`
     UPDATE public.notifications
     SET
       title = COALESCE(NULLIF(BTRIM(title), ''), 'Platform update'),
@@ -349,7 +381,7 @@ export async function ensureCivicPlatformSchema() {
       created_at = COALESCE(created_at, CURRENT_TIMESTAMP)
   `);
 
-  await civicPlatformPool.query(`
+  await runBootstrapStatement(`
     UPDATE public.sanitary_reimbursement_requests
     SET
       citizen_name = COALESCE(NULLIF(BTRIM(citizen_name), ''), 'Citizen'),
