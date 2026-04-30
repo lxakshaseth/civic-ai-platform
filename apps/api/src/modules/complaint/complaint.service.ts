@@ -631,11 +631,36 @@ export class ComplaintsService {
       ]
     );
 
-    return this.getComplaintDtoOrThrow(created.rows[0].id, {
-      id: citizenId,
-      email: "",
-      role: UserRole.CITIZEN
-    });
+    const createdComplaintId = created.rows[0]?.id;
+
+    if (!createdComplaintId) {
+      throw new AppError(
+        "Complaint was created but no complaint id was returned",
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "COMPLAINT_ID_MISSING"
+      );
+    }
+
+    try {
+      return await this.getComplaintDtoOrThrow(createdComplaintId, {
+        id: citizenId,
+        email: "",
+        role: UserRole.CITIZEN
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          error,
+          complaintId: createdComplaintId,
+          citizenId
+        },
+        "Complaint was created, but the immediate readback failed. Returning the complaint id only."
+      );
+
+      return {
+        id: createdComplaintId
+      };
+    }
   }
 
   listComplaints(
