@@ -201,21 +201,64 @@ export class ComplaintsRepository {
       note?: string;
     }>;
   }) {
-    const { complaintImages, ...complaintData } = data;
+    const {
+      title,
+      description,
+      issueType,
+      urgencyScore,
+      tags,
+      structuredAddress,
+      category,
+      priority,
+      locationAddress,
+      latitude,
+      longitude,
+      imagePath,
+      citizenId,
+      departmentId,
+      aiCategory,
+      aiPriority,
+      aiConfidence,
+      duplicateScore,
+      fraudScore,
+      isSuspicious,
+      duplicateComplaintId,
+      fraudSignals,
+      complaintImages
+    } = data;
     const createInput: Prisma.ComplaintCreateInput = {
-      ...complaintData,
+      title,
+      description,
+      issueType,
+      urgencyScore,
+      tags,
+      structuredAddress,
+      category,
+      priority,
+      locationAddress,
+      latitude,
+      longitude,
+      imagePath,
+      aiCategory,
+      aiPriority,
+      aiConfidence,
+      duplicateScore,
+      fraudScore,
+      isSuspicious,
+      duplicateComplaintId,
+      fraudSignals,
       status: ComplaintStatus.SUBMITTED,
       lastStatusChangedAt: new Date(),
       citizen: {
         connect: {
-          id: data.citizenId
+          id: citizenId
         }
       },
-      ...(data.departmentId
+      ...(departmentId
         ? {
             department: {
               connect: {
-                id: data.departmentId
+                id: departmentId
               }
             }
           }
@@ -225,7 +268,7 @@ export class ComplaintsRepository {
           status: ComplaintStatus.SUBMITTED,
           changedBy: {
             connect: {
-              id: data.citizenId
+              id: citizenId
             }
           },
           note: "Complaint submitted"
@@ -238,15 +281,15 @@ export class ComplaintsRepository {
           description: "Complaint submitted by citizen",
           createdBy: {
             connect: {
-              id: data.citizenId
+              id: citizenId
             }
           },
           metadata: {
             status: ComplaintStatus.SUBMITTED,
-            duplicateScore: data.duplicateScore ?? null,
-            fraudScore: data.fraudScore ?? null,
-            isSuspicious: data.isSuspicious ?? false,
-            fraudSignals: data.fraudSignals ?? null
+            duplicateScore: duplicateScore ?? null,
+            fraudScore: fraudScore ?? null,
+            isSuspicious: isSuspicious ?? false,
+            fraudSignals: fraudSignals ?? null
           }
         }
       },
