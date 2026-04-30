@@ -5,7 +5,6 @@ import dotenv from "dotenv";
 
 import { createApp } from "app";
 import { env } from "config/env";
-import { ensureCivicPlatformSchemaReady } from "database/clients/civic-platform";
 import { prisma } from "database/clients/prisma";
 import { connectRedis } from "database/clients/redis";
 import { closeBullMqConnection } from "queues/connection";
@@ -140,13 +139,6 @@ const bootstrap = async () => {
     } catch (error) {
       console.error("Prisma failed:", error);
       logger.error({ error }, "Prisma failed");
-    }
-
-    try {
-      await ensureCivicPlatformSchemaReady();
-      logger.info("Civic platform schema ready");
-    } catch (error) {
-      logger.error({ error }, "Civic platform schema bootstrap failed");
     }
 
     if (shouldStartQueues) {

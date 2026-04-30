@@ -7,6 +7,416 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Department {
+  id          String               @id @default(uuid())
+  name        String               @unique
+  description String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  assignments ComplaintAssignment[]
+  feedbacks   ComplaintFeedback[]
+  complaints  Complaint[]
+  users       User[]
+
+  @@map("Department")
+}
+
+model Ticket {
+  id          String       @id @default(uuid())
+  complaintId String
+  raisedById  String
+  message     String
+  status      TicketStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  complaint   Complaint    @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  raisedBy    User         @relation("TicketRaisedBy", fields: [raisedById], references: [id], onDelete: Cascade)
+
+  @@index([complaintId, createdAt])
+  @@index([raisedById, createdAt])
+  @@index([status, createdAt])
+  @@map("Ticket")
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  userId      String
+  complaintId String?
+  type        NotificationType
+  title       String
+  message     String
+  data        Json?
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+  user        User             @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([complaintId])
+  @@map("Notification")
+}
+
+model ChatbotKnowledgeEntry {
+  id                 String           @id @default(uuid())
+  question           String
+  normalizedQuestion String           @unique
+  answer             String
+  keywords           String[]         @default([])
+  category           String?
+  isSeed             Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  messages           ChatbotMessage[]
+
+  @@index([category, createdAt])
+  @@map("ChatbotKnowledgeEntry")
+}
+
+model ChatbotMessage {
+  id               String                 @id @default(uuid())
+  userId           String
+  role             ChatbotMessageRole
+  content          String
+  responseSource   ChatbotResponseSource?
+  knowledgeEntryId String?
+  createdAt        DateTime               @default(now())
+  knowledgeEntry   ChatbotKnowledgeEntry? @relation(fields: [knowledgeEntryId], references: [id])
+  user             User                   @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([knowledgeEntryId])
+  @@map("ChatbotMessage")
+}
+
+model RefreshToken {
+  id               String   @id @default(uuid())
+  userId           String
+  tokenHash        String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("RefreshToken")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  entity     String
+  entityId   String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId, createdAt])
+  @@index([userId, createdAt])
+  @@map("AuditLog")
+}
+
+model DailyBoostContent {
+  id         String         @id @default(uuid())
+  type       DailyBoostType
+  mood       DailyBoostMood
+  language   String         @db.VarChar(16)
+  pincode    String?
+  content    String
+  emoji      String?
+  prompt     String?
+  model      String?
+  source     String?
+  likesCount Int            @default(0)
+  expiresAt  DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  savedBy    SavedContent[]
+  likedBy    UserLike[]
+
+  @@index([type, mood, language, createdAt])
+  @@index([pincode, createdAt])
+  @@map("DailyBoostContent")
+}
+
+model SavedContent {
+  id        String           @id @default(uuid())
+  userId    String
+  contentId String
+  createdAt DateTime         @default(now())
+  content   DailyBoostContent @relation(fields: [contentId], references: [id])
+  user      User             @relation("UserSavedContent", fields: [userId], references: [id])
+
+  @@unique([userId, contentId])
+  @@index([userId, createdAt])
+  @@map("saved_content")
+}
+
+model UserLike {
+  id        String           @id @default(uuid())
+  userId    String
+  contentId String
+  createdAt DateTime         @default(now())
+  content   DailyBoostContent @relation(fields: [contentId], references: [id])
+  user      User             @relation("UserLikedContent", fields: [userId], references: [id])
+
+  @@unique([userId, contentId])
+  @@index([userId, createdAt])
+  @@map("user_likes")
+}
+
+model ComplaintAssignment {
+  id           String     @id @default(uuid()) @map("id")
+  complaintId   String
+  employeeId    String
+  departmentId  String?
+  assignedById  String
+  note          String?
+  createdAt     DateTime  @default(now())
+  assignedBy    User       @relation("AssignedByUsers", fields: [assignedById], references: [id], map: "ComplaintAssignment_assignedById_fkey")
+  complaint     Complaint  @relation(fields: [complaintId], references: [id], map: "ComplaintAssignment_complaintId_fkey")
+  department    Department? @relation(fields: [departmentId], references: [id], map: "ComplaintAssignment_departmentId_fkey")
+  employee      User       @relation("EmployeeAssignments", fields: [employeeId], references: [id], map: "ComplaintAssignment_employeeId_fkey")
+
+  @@map("complaint_assignment")
+}
+
+model ComplaintComment {
+  id          String    @id @default(uuid()) @map("id")
+  complaintId String
+  userId      String
+  comment     String
+  createdAt   DateTime  @default(now())
+  complaint   Complaint @relation(fields: [complaintId], references: [id], map: "ComplaintComment_complaintId_fkey")
+  user        User      @relation(fields: [userId], references: [id], map: "ComplaintComment_userId_fkey")
+
+  @@index([complaintId, createdAt], map: "ComplaintComment_complaintId_createdAt_idx")
+  @@map("complaint_comment")
+}
+
+model ComplaintFeedback {
+  id           String      @id @default(uuid()) @map("id")
+  complaintId  String      @unique(map: "ComplaintFeedback_complaintId_key")
+  citizenId    String
+  departmentId String?
+  officerId    String?
+  rating       Int
+  comment      String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  citizen      User        @relation("ComplaintFeedbackCitizen", fields: [citizenId], references: [id], map: "ComplaintFeedback_citizenId_fkey")
+  complaint    Complaint   @relation(fields: [complaintId], references: [id], map: "ComplaintFeedback_complaintId_fkey")
+  department   Department? @relation(fields: [departmentId], references: [id], map: "ComplaintFeedback_departmentId_fkey")
+  officer      User?       @relation("ComplaintFeedbackOfficer", fields: [officerId], references: [id], map: "ComplaintFeedback_officerId_fkey")
+
+  @@index([departmentId, createdAt], map: "ComplaintFeedback_departmentId_createdAt_idx")
+  @@index([officerId, createdAt], map: "ComplaintFeedback_officerId_createdAt_idx")
+  @@map("complaint_feedback")
+}
+
+model ComplaintStatusLog {
+  id          String          @id @default(uuid()) @map("id")
+  complaintId String
+  status      ComplaintStatus
+  note        String?
+  changedById String?
+  createdAt   DateTime        @default(now())
+  changedBy   User?           @relation(fields: [changedById], references: [id], map: "ComplaintStatusLog_changedById_fkey")
+  complaint   Complaint       @relation(fields: [complaintId], references: [id], map: "ComplaintStatusLog_complaintId_fkey")
+
+  @@map("complaint_status_log")
+}
+
+model ComplaintTimelineEntry {
+  id          String    @id @default(uuid()) @map("id")
+  complaintId String
+  eventType   String
+  title       String
+  description String?
+  metadata    Json?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  complaint   Complaint @relation(fields: [complaintId], references: [id], map: "ComplaintTimelineEntry_complaintId_fkey")
+  createdBy   User?     @relation("TimelineEntryActor", fields: [createdById], references: [id], map: "ComplaintTimelineEntry_createdById_fkey")
+
+  @@index([complaintId, createdAt], map: "ComplaintTimelineEntry_complaintId_createdAt_idx")
+  @@map("complaint_timeline_entry")
+}
+
+model Complaint {
+  id                  String                  @id @default(uuid()) @map("id")
+  title               String
+  description         String
+  status              ComplaintStatus         @default(OPEN)
+  issueType           String?
+  urgencyScore        Int?
+  tags                String[]                @default([])
+  structuredAddress   Json?
+  category            String?
+  priority            String?
+  locationAddress     String?
+  latitude            Decimal?                @db.Decimal(10, 7)
+  longitude           Decimal?                @db.Decimal(10, 7)
+  imagePath           String?
+  aiCategory          String?
+  aiPriority          String?
+  aiConfidence        Float?
+  duplicateScore      Float?
+  fraudScore          Float?
+  isSuspicious        Boolean                 @default(false)
+  fraudSignals        Json?
+  duplicateComplaintId String?
+  citizenId           String
+  departmentId        String?
+  assignedEmployeeId  String?
+  reopenedCount       Int                     @default(0)
+  lastStatusChangedAt DateTime                @default(now())
+  resolvedAt          DateTime?
+  closedAt            DateTime?
+  rejectedAt          DateTime?
+  reopenedAt          DateTime?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  tickets             Ticket[]
+  assignments         ComplaintAssignment[]
+  comments            ComplaintComment[]
+  feedback            ComplaintFeedback?
+  statusHistory       ComplaintStatusLog[]
+  timelineEntries     ComplaintTimelineEntry[]
+  assignedEmployee    User?                   @relation("AssignedComplaints", fields: [assignedEmployeeId], references: [id], map: "Complaint_assignedEmployeeId_fkey")
+  citizen             User                    @relation("CitizenComplaints", fields: [citizenId], references: [id], map: "Complaint_citizenId_fkey")
+  department          Department?             @relation(fields: [departmentId], references: [id], map: "Complaint_departmentId_fkey")
+  evidenceItems       Evidence[]
+
+  @@index([assignedEmployeeId, status], map: "Complaint_assignedEmployeeId_status_idx")
+  @@index([citizenId, createdAt], map: "Complaint_citizenId_createdAt_idx")
+  @@index([departmentId, status], map: "Complaint_departmentId_status_idx")
+  @@index([isSuspicious, fraudScore], map: "Complaint_isSuspicious_fraudScore_idx")
+  @@index([status, createdAt], map: "Complaint_status_createdAt_idx")
+  @@map("complaints")
+}
+
+model Evidence {
+  id                 String      @id @default(uuid()) @map("id")
+  complaintId        String
+  uploadedById       String
+  reviewedById       String?
+  type               EvidenceType
+  fileName           String
+  filePath           String
+  mimeType           String
+  fileSize           Int
+  note               String?
+  ocrText            String?
+  ocrConfidence      Float?
+  ocrFields          Json?
+  verificationStatus String?     @default("PENDING")
+  reviewRemarks      String?
+  reviewedAt         DateTime?
+  invoiceVendorName  String?
+  invoiceNumber      String?
+  invoiceDate        DateTime?
+  invoiceAmount      Decimal?    @db.Decimal(12, 2)
+  latitude           Decimal?    @db.Decimal(10, 7)
+  longitude          Decimal?    @db.Decimal(10, 7)
+  duplicateScore     Float?
+  isDuplicate        Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  complaint          Complaint   @relation(fields: [complaintId], references: [id], map: "Evidence_complaintId_fkey")
+  reviewedBy         User?       @relation("EvidenceReviewedBy", fields: [reviewedById], references: [id], map: "Evidence_reviewedById_fkey")
+  uploadedBy         User        @relation("EvidenceUploadedBy", fields: [uploadedById], references: [id], map: "Evidence_uploadedById_fkey")
+
+  @@index([complaintId, type], map: "Evidence_complaintId_type_idx")
+  @@index([verificationStatus, createdAt], map: "Evidence_verificationStatus_createdAt_idx")
+  @@map("evidence")
+}
+
+model sanitary_reimbursement_requests {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  citizen_id     String?   @db.Uuid
+  citizen_name   String?
+  upi_id         String?
+  amount         Decimal   @default(0) @db.Decimal(12, 2)
+  status         String    @default("pending") @db.VarChar(32)
+  transaction_id String?
+  invoice_number String?
+  vendor_name    String?
+  bill_file_path String?
+  review_note    String?
+  fraud_reason   String?
+  applied_at     DateTime? @default(now()) @db.Timestamp(6)
+  approved_at    DateTime? @db.Timestamp(6)
+  paid_at        DateTime? @db.Timestamp(6)
+  rejected_at    DateTime? @db.Timestamp(6)
+  flagged_at     DateTime? @db.Timestamp(6)
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  updated_at     DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([citizen_id, applied_at(sort: Desc)], map: "sanitary_reimbursement_citizen_idx")
+  @@index([status, applied_at(sort: Desc)], map: "sanitary_reimbursement_status_idx")
+  @@index([upi_id, applied_at(sort: Desc)], map: "sanitary_reimbursement_upi_idx")
+}
+
+model User {
+  id                      String                @id @default(uuid()) @map("id")
+  fullName                String
+  email                   String                @unique(map: "User_email_key")
+  phone                   String?               @unique(map: "User_phone_key")
+  passwordHash            String
+  role                    UserRole              @default(CITIZEN)
+  isActive                Boolean               @default(true)
+  departmentId            String?
+  showSanitaryFeature     Boolean               @default(false)
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  password                String?
+  departmentName          String?               @map("department")
+  employeeCode            String?               @map("employee_code")
+  gender                  String?
+  age                     Int?
+  language                String?               @default("en") @db.VarChar(16)
+  accountStatus           String?               @default("ACTIVE") @map("status") @db.VarChar(32)
+  dateOfBirth             DateTime?             @map("date_of_birth") @db.Date
+  permanentAddress        String?               @map("permanent_address")
+  temporaryAddress        String?               @map("temporary_address")
+  pincode                 String?               @db.VarChar(10)
+  aadharNumber            String?               @map("aadhar_number")
+  panNumber               String?               @map("pan_number")
+  category                String?
+  bankName                String?               @map("bank_name")
+  ifscCode                String?               @map("ifsc_code")
+  accountNumber           String?               @map("account_number")
+  guardianName            String?               @map("guardian_name")
+  relation                String?
+  guardianPhone           String?               @map("guardian_phone")
+  profileCompleted        Boolean?              @default(false) @map("profile_completed")
+  refreshTokenHash        String?               @map("refresh_token_hash")
+  legacyCreatedAt         DateTime?             @default(now()) @map("created_at") @db.Timestamp(6)
+  legacyUpdatedAt         DateTime?             @default(now()) @map("updated_at") @db.Timestamp(6)
+  auditLogs               AuditLog[]
+  chatbotMessages         ChatbotMessage[]
+  notifications           Notification[]
+  refreshTokens           RefreshToken[]
+  raisedTickets           Ticket[]              @relation("TicketRaisedBy")
+  complaints              Complaint[]           @relation("CitizenComplaints")
+  assignedComplaints      Complaint[]           @relation("AssignedComplaints")
+  assignments             ComplaintAssignment[] @relation("EmployeeAssignments")
+  assignedBy              ComplaintAssignment[] @relation("AssignedByUsers")
+  complaintComments       ComplaintComment[]
+  citizenFeedbacks        ComplaintFeedback[]   @relation("ComplaintFeedbackCitizen")
+  officerFeedbacks        ComplaintFeedback[]   @relation("ComplaintFeedbackOfficer")
+  statusChanges           ComplaintStatusLog[]
+  complaintTimelineEntries ComplaintTimelineEntry[] @relation("TimelineEntryActor")
+  reviewedEvidence        Evidence[]            @relation("EvidenceReviewedBy")
+  evidenceUploads         Evidence[]            @relation("EvidenceUploadedBy")
+  savedContent            SavedContent[]        @relation("UserSavedContent")
+  likedContent            UserLike[]            @relation("UserLikedContent")
+  department              Department?           @relation(fields: [departmentId], references: [id], map: "User_departmentId_fkey")
+
+  @@map("users")
+}
+
 enum UserRole {
   CITIZEN
   EMPLOYEE
@@ -72,364 +482,4 @@ enum DailyBoostMood {
   HAPPY
   STRESS
   ANGRY
-}
-
-model Department {
-  id          String               @id @default(uuid())
-  name        String               @unique
-  description String?
-  users       User[]
-  complaints  Complaint[]
-  assignments ComplaintAssignment[]
-  feedbacks   ComplaintFeedback[]
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-
-  @@map("Department")
-}
-
-model User {
-  id                String                @id @default(uuid())
-  fullName          String
-  email             String                @unique
-  phone             String?               @unique
-  passwordHash      String                
-  role              UserRole              @default(CITIZEN)
-  isActive          Boolean               @default(true)
-  departmentId      String?
-  department        Department?           @relation(fields: [departmentId], references: [id])
-  complaints        Complaint[]           @relation("CitizenComplaints")
-  assignedComplaints Complaint[]          @relation("AssignedComplaints")
-  assignments       ComplaintAssignment[] @relation("EmployeeAssignments")
-  assignedBy        ComplaintAssignment[] @relation("AssignedByUsers")
-  statusChanges     ComplaintStatusLog[]
-  evidenceUploads   Evidence[]            @relation("EvidenceUploadedBy")
-  reviewedEvidence  Evidence[]            @relation("EvidenceReviewedBy")
-  notifications     Notification[]
-  refreshTokens     RefreshToken[]
-  auditLogs         AuditLog[]
-  chatbotMessages   ChatbotMessage[]
-  complaintComments ComplaintComment[]
-  complaintTimelineEntries ComplaintTimelineEntry[] @relation("TimelineEntryActor")
-  citizenFeedbacks  ComplaintFeedback[]   @relation("ComplaintFeedbackCitizen")
-  officerFeedbacks  ComplaintFeedback[]   @relation("ComplaintFeedbackOfficer")
-  raisedTickets     Ticket[]              @relation("TicketRaisedBy")
-  savedContent      SavedContent[]        @relation("UserSavedContent")
-  likedContent      UserLike[]            @relation("UserLikedContent")
-  showSanitaryFeature Boolean             @default(false)
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-
-  @@map("user")
-}
-
-model Complaint {
-  id                String               @id @default(uuid())
-  title             String
-  description       String
-  status            ComplaintStatus      @default(OPEN)
-  issueType         String?
-  urgencyScore      Int?
-  tags              String[]             @default([])
-  structuredAddress Json?
-  category          String?
-  priority          String?
-  locationAddress   String?
-  latitude          Decimal?             @db.Decimal(10, 7)
-  longitude         Decimal?             @db.Decimal(10, 7)
-  imagePath         String?
-  aiCategory        String?
-  aiPriority        String?
-  aiConfidence      Float?
-  duplicateScore    Float?
-  fraudScore        Float?
-  isSuspicious      Boolean              @default(false)
-  fraudSignals      Json?
-  duplicateComplaintId String?
-  citizenId         String
-  citizen           User                 @relation("CitizenComplaints", fields: [citizenId], references: [id])
-  departmentId      String?
-  department        Department?          @relation(fields: [departmentId], references: [id])
-  assignedEmployeeId String?
-  assignedEmployee  User?                @relation("AssignedComplaints", fields: [assignedEmployeeId], references: [id])
-  reopenedCount     Int                  @default(0)
-  lastStatusChangedAt DateTime           @default(now())
-  resolvedAt        DateTime?
-  closedAt          DateTime?
-  rejectedAt        DateTime?
-  reopenedAt        DateTime?
-  assignments       ComplaintAssignment[]
-  statusHistory     ComplaintStatusLog[]
-  evidenceItems     Evidence[]
-  comments          ComplaintComment[]
-  timelineEntries   ComplaintTimelineEntry[]
-  feedback          ComplaintFeedback?
-  tickets           Ticket[]
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-
-  @@index([citizenId, createdAt])
-  @@index([status, createdAt])
-  @@index([departmentId, status])
-  @@index([assignedEmployeeId, status])
-  @@index([isSuspicious, fraudScore])
-  @@map("Complaint")
-}
-
-model ComplaintAssignment {
-  id            String      @id @default(uuid())
-  complaintId   String
-  complaint     Complaint   @relation(fields: [complaintId], references: [id])
-  employeeId    String
-  employee      User        @relation("EmployeeAssignments", fields: [employeeId], references: [id])
-  departmentId  String?
-  department    Department? @relation(fields: [departmentId], references: [id])
-  assignedById  String
-  assignedBy    User        @relation("AssignedByUsers", fields: [assignedById], references: [id])
-  note          String?
-  createdAt     DateTime    @default(now())
-
-  @@map("ComplaintAssignment")
-}
-
-model ComplaintStatusLog {
-  id          String          @id @default(uuid())
-  complaintId String
-  complaint   Complaint       @relation(fields: [complaintId], references: [id])
-  status      ComplaintStatus
-  note        String?
-  changedById String?
-  changedBy   User?           @relation(fields: [changedById], references: [id])
-  createdAt   DateTime        @default(now())
-
-  @@map("ComplaintStatusLog")
-}
-
-model Evidence {
-  id                  String       @id @default(uuid())
-  complaintId         String
-  complaint           Complaint    @relation(fields: [complaintId], references: [id])
-  uploadedById        String
-  uploadedBy          User         @relation("EvidenceUploadedBy", fields: [uploadedById], references: [id])
-  reviewedById        String?
-  reviewedBy          User?        @relation("EvidenceReviewedBy", fields: [reviewedById], references: [id])
-  type                EvidenceType
-  fileName            String
-  filePath            String
-  mimeType            String
-  fileSize            Int
-  note                String?
-  ocrText             String?
-  ocrConfidence       Float?
-  ocrFields           Json?
-  verificationStatus  String?      @default("PENDING")
-  reviewRemarks       String?
-  reviewedAt          DateTime?
-  invoiceVendorName   String?
-  invoiceNumber       String?
-  invoiceDate         DateTime?
-  invoiceAmount       Decimal?     @db.Decimal(12, 2)
-  latitude            Decimal?     @db.Decimal(10, 7)
-  longitude           Decimal?     @db.Decimal(10, 7)
-  duplicateScore      Float?
-  isDuplicate         Boolean      @default(false)
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
-
-  @@index([complaintId, type])
-  @@index([verificationStatus, createdAt])
-  @@map("Evidence")
-}
-
-model ComplaintComment {
-  id          String    @id @default(uuid())
-  complaintId String
-  complaint   Complaint @relation(fields: [complaintId], references: [id])
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  comment     String
-  createdAt   DateTime  @default(now())
-
-  @@index([complaintId, createdAt])
-  @@map("ComplaintComment")
-}
-
-model ComplaintTimelineEntry {
-  id          String    @id @default(uuid())
-  complaintId String
-  complaint   Complaint @relation(fields: [complaintId], references: [id])
-  eventType   String
-  title       String
-  description String?
-  metadata    Json?
-  createdById String?
-  createdBy   User?     @relation("TimelineEntryActor", fields: [createdById], references: [id])
-  createdAt   DateTime  @default(now())
-
-  @@index([complaintId, createdAt])
-  @@map("ComplaintTimelineEntry")
-}
-
-model ComplaintFeedback {
-  id           String      @id @default(uuid())
-  complaintId  String      @unique
-  complaint    Complaint   @relation(fields: [complaintId], references: [id])
-  citizenId    String
-  citizen      User        @relation("ComplaintFeedbackCitizen", fields: [citizenId], references: [id])
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id])
-  officerId    String?
-  officer      User?       @relation("ComplaintFeedbackOfficer", fields: [officerId], references: [id])
-  rating       Int
-  comment      String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  @@index([departmentId, createdAt])
-  @@index([officerId, createdAt])
-  @@map("ComplaintFeedback")
-}
-
-model Ticket {
-  id          String       @id @default(uuid())
-  complaintId String
-  complaint   Complaint    @relation(fields: [complaintId], references: [id], onDelete: Cascade)
-  raisedById  String
-  raisedBy    User         @relation("TicketRaisedBy", fields: [raisedById], references: [id], onDelete: Cascade)
-  message     String
-  status      TicketStatus @default(PENDING)
-  createdAt   DateTime     @default(now())
-
-  @@index([complaintId, createdAt])
-  @@index([raisedById, createdAt])
-  @@index([status, createdAt])
-  @@map("Ticket")
-}
-
-model Notification {
-  id        String           @id @default(uuid())
-  userId    String
-  user      User             @relation(fields: [userId], references: [id])
-  complaintId String?
-  type      NotificationType
-  title     String
-  message   String
-  data      Json?
-  readAt    DateTime?
-  createdAt DateTime         @default(now())
-
-  @@index([userId, createdAt])
-  @@index([complaintId])
-  @@map("Notification")
-}
-
-model ChatbotKnowledgeEntry {
-  id                 String           @id @default(uuid())
-  question           String
-  normalizedQuestion String           @unique
-  answer             String
-  keywords           String[]         @default([])
-  category           String?
-  isSeed             Boolean          @default(false)
-  messages           ChatbotMessage[]
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-
-  @@index([category, createdAt])
-  @@map("ChatbotKnowledgeEntry")
-}
-
-model ChatbotMessage {
-  id               String                 @id @default(uuid())
-  userId           String
-  user             User                   @relation(fields: [userId], references: [id])
-  role             ChatbotMessageRole
-  content          String
-  responseSource   ChatbotResponseSource?
-  knowledgeEntryId String?
-  knowledgeEntry   ChatbotKnowledgeEntry? @relation(fields: [knowledgeEntryId], references: [id])
-  createdAt        DateTime               @default(now())
-
-  @@index([userId, createdAt])
-  @@index([knowledgeEntryId])
-  @@map("ChatbotMessage")
-}
-
-model RefreshToken {
-  id         String    @id @default(uuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id])
-  tokenHash  String
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
-
-  @@index([userId, createdAt])
-  @@map("RefreshToken")
-}
-
-model AuditLog {
-  id         String    @id @default(uuid())
-  userId     String?
-  user       User?     @relation(fields: [userId], references: [id])
-  action     String
-  entity     String
-  entityId   String?
-  ipAddress  String?
-  userAgent  String?
-  metadata   Json?
-  createdAt  DateTime  @default(now())
-
-  @@index([entity, entityId, createdAt])
-  @@index([userId, createdAt])
-  @@map("AuditLog")
-}
-
-model DailyBoostContent {
-  id         String         @id @default(uuid())
-  type       DailyBoostType
-  mood       DailyBoostMood
-  language   String         @db.VarChar(16)
-  pincode    String?
-  content    String
-  emoji      String?
-  prompt     String?
-  model      String?
-  source     String?
-  likesCount Int            @default(0)
-  expiresAt  DateTime?
-  savedBy    SavedContent[]
-  likedBy    UserLike[]
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
-
-  @@index([type, mood, language, createdAt])
-  @@index([pincode, createdAt])
-  @@map("DailyBoostContent")
-}
-
-model SavedContent {
-  id        String           @id @default(uuid())
-  userId    String
-  user      User             @relation("UserSavedContent", fields: [userId], references: [id])
-  contentId String
-  content   DailyBoostContent @relation(fields: [contentId], references: [id])
-  createdAt DateTime         @default(now())
-
-  @@unique([userId, contentId])
-  @@index([userId, createdAt])
-  @@map("saved_content")
-}
-
-model UserLike {
-  id        String           @id @default(uuid())
-  userId    String
-  user      User             @relation("UserLikedContent", fields: [userId], references: [id])
-  contentId String
-  content   DailyBoostContent @relation(fields: [contentId], references: [id])
-  createdAt DateTime         @default(now())
-
-  @@unique([userId, contentId])
-  @@index([userId, createdAt])
-  @@map("user_likes")
 }

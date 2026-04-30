@@ -1,23 +1,13 @@
-import { UserRole } from "@prisma/client";
+import { ComplaintStatus, UserRole } from "@prisma/client";
 import { StatusCodes } from "http-status-codes";
-import type { PoolClient } from "pg";
 
-import {
-  queryCivicPlatform,
-  withCivicPlatformTransaction
-} from "database/clients/civic-platform";
 import { queueNotificationJob } from "queues/jobs/notification.job";
 import { AppError } from "shared/errors/app-error";
-import { departmentsMatch } from "utils/department-match";
 import { calculateDistanceKm } from "utils/geo";
 import { logger } from "utils/logger";
 import { toPublicUploadPath } from "utils/uploads";
 
-import {
-  ComplaintsRepository,
-  type ComplaintListRecord,
-  type ComplaintRecord
-} from "./complaint.repository";
+import { EvidenceService } from "../evidence/evidence.service";
 import {
   analyzeComplaintDraft,
   buildFullAddress,
@@ -25,6 +15,11 @@ import {
   normalizeStructuredAddress,
   type ComplaintStructuredAddress
 } from "./complaint-ai";
+import {
+  ComplaintsRepository,
+  type ComplaintListRecord,
+  type ComplaintRecord
+} from "./complaint.repository";
 
 interface Actor {
   id: string;
@@ -106,135 +101,31 @@ type ComplaintFeedbackInput = {
 
 type ComplaintAccessMode = "public" | "participant" | "owner";
 
-type ComplaintRow = {
-  id: string;
-  title: string | null;
-  description: string | null;
-  issueType: string | null;
-  urgencyScore: number | null;
-  tags: string[] | null;
-  structuredAddress: ComplaintStructuredAddress | null;
-  category: string | null;
-  department: string | null;
-  status: string | null;
-  priority: string | null;
-  pincode: string | null;
-  locationAddress: string | null;
-  latitude: string | null;
-  longitude: string | null;
-  imageUrl: string | null;
-  citizenId: string | null;
-  citizenName: string | null;
-  citizenEmail: string | null;
-  assignedEmployeeId: string | null;
-  assignedEmployeeName: string | null;
-  assignedEmployeeDepartment: string | null;
-  createdAt: string | null;
-  updatedAt: string | null;
-  resolvedAt: string | null;
-  closedAt: string | null;
-  reopenedAt: string | null;
-  rejectionReason: string | null;
-};
-
-type AssignmentRow = {
-  id: number;
-  complaintId: string | null;
-  employeeId: string | null;
-  employeeName: string | null;
-  employeeDepartment: string | null;
-  note: string | null;
-  status: string | null;
-  assignedAt: string | null;
-  completedAt: string | null;
-};
-
-type ProofRow = {
-  id: number;
-  complaintId: string | null;
-  assignmentId: number | null;
-  fileUrl: string | null;
-  uploadedAt: string | null;
-  proofType: string | null;
-  note: string | null;
-  fileName: string | null;
-  mimeType: string | null;
-  uploadedBy: string | null;
-  uploadedByName: string | null;
-  uploadedByRole: string | null;
-};
-
-type ComplaintWorkSummary = {
-  notes: string;
-  laborCount?: number | null;
-  billAmount?: number | null;
-  invoiceVendorName?: string | null;
-  invoiceNumber?: string | null;
-  invoiceDate?: string | null;
-  materialsUsed?: string | null;
-};
-
-type RatingRow = {
-  id: number;
-  complaintId: string | null;
-  citizenId: string | null;
-  rating: number | null;
-  feedback: string | null;
-  createdAt: string | null;
-};
-
-type CommentRow = {
-  id: number;
-  complaintId: string | null;
-  senderId: string | null;
-  senderName: string | null;
-  senderRole: string | null;
-  comment: string | null;
-  createdAt: string | null;
-};
-
 const adminRoles = new Set<UserRole>([UserRole.DEPARTMENT_ADMIN, UserRole.SUPER_ADMIN]);
 
-const baseComplaintSelect = `
-  c.id,
-  c.title,
-  c.description,
-  c.issue_type AS "issueType",
-  c.urgency_score AS "urgencyScore",
-  COALESCE(c.tags, ARRAY[]::text[]) AS tags,
-  c.structured_address AS "structuredAddress",
-  c.category,
-  c.department,
-  c.status,
-  c.priority,
-  c.pincode,
-  c.location_address AS "locationAddress",
-  c.latitude::text AS latitude,
-  c.longitude::text AS longitude,
-  c.image_url AS "imageUrl",
-  c.citizen_id AS "citizenId",
-  citizen.name AS "citizenName",
-  citizen.email AS "citizenEmail",
-  c.assigned_employee_id AS "assignedEmployeeId",
-  employee.name AS "assignedEmployeeName",
-  employee.department AS "assignedEmployeeDepartment",
-  c.created_at::text AS "createdAt",
-  c.updated_at::text AS "updatedAt",
-  c.resolved_at::text AS "resolvedAt",
-  c.closed_at::text AS "closedAt",
-  c.reopened_at::text AS "reopenedAt",
-  c.rejection_reason AS "rejectionReason"
-`;
-
-function normalizeInternalStatus(value?: string | null) {
+function normalizeInternalStatus(value?: string | null): ComplaintStatus {
   const normalized = value?.trim().toUpperCase();
 
-  if (normalized === "CLOSED") return "CLOSED";
-  if (normalized === "RESOLVED") return "RESOLVED";
-  if (normalized === "IN_PROGRESS") return "IN_PROGRESS";
-  if (normalized === "REOPENED") return "REOPENED";
-  if (normalized === "ASSIGNED") return "ASSIGNED";
-  return "OPEN";
+  switch (normalized) {
+    case ComplaintStatus.SUBMITTED:
+      return ComplaintStatus.SUBMITTED;
+    case ComplaintStatus.UNDER_REVIEW:
+      return ComplaintStatus.UNDER_REVIEW;
+    case ComplaintStatus.ASSIGNED:
+      return ComplaintStatus.ASSIGNED;
+    case ComplaintStatus.IN_PROGRESS:
+      return ComplaintStatus.IN_PROGRESS;
+    case ComplaintStatus.RESOLVED:
+      return ComplaintStatus.RESOLVED;
+    case ComplaintStatus.REJECTED:
+      return ComplaintStatus.REJECTED;
+    case ComplaintStatus.REOPENED:
+      return ComplaintStatus.REOPENED;
+    case ComplaintStatus.CLOSED:
+      return ComplaintStatus.CLOSED;
+    default:
+      return ComplaintStatus.OPEN;
+  }
 }
 
 function normalizePriority(value?: string | null): "Low" | "Medium" | "High" {
@@ -245,35 +136,26 @@ function normalizePriority(value?: string | null): "Low" | "Medium" | "High" {
   return "Medium";
 }
 
-function toFriendlyStatus(internalStatus: string) {
-  if (internalStatus === "CLOSED") return "Resolved";
-  if (internalStatus === "RESOLVED") return "Pending Admin Approval";
-  if (internalStatus === "IN_PROGRESS") return "In Progress";
-  if (internalStatus === "REOPENED") return "Reassigned";
-  if (internalStatus === "ASSIGNED") return "Assigned";
+function toFriendlyStatus(internalStatus: ComplaintStatus) {
+  if (internalStatus === ComplaintStatus.CLOSED) return "Resolved";
+  if (internalStatus === ComplaintStatus.RESOLVED) return "Pending Admin Approval";
+  if (internalStatus === ComplaintStatus.IN_PROGRESS) return "In Progress";
+  if (internalStatus === ComplaintStatus.REOPENED) return "Reassigned";
+  if (internalStatus === ComplaintStatus.ASSIGNED) return "Assigned";
   return "Submitted";
 }
 
-function toWorkStatus(internalStatus: string): "Pending" | "In Progress" | "Completed" {
-  if (internalStatus === "CLOSED") return "Completed";
-  if (internalStatus === "RESOLVED" || internalStatus === "IN_PROGRESS" || internalStatus === "REOPENED") {
+function toWorkStatus(internalStatus: ComplaintStatus): "Pending" | "In Progress" | "Completed" {
+  if (internalStatus === ComplaintStatus.CLOSED) return "Completed";
+  if (
+    internalStatus === ComplaintStatus.RESOLVED ||
+    internalStatus === ComplaintStatus.IN_PROGRESS ||
+    internalStatus === ComplaintStatus.REOPENED
+  ) {
     return "In Progress";
   }
 
   return "Pending";
-}
-
-function toNumber(value?: string | null) {
-  if (!value) {
-    return 0;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function safeDate(value?: string | null) {
-  return value ?? new Date().toISOString();
 }
 
 function deriveArea(locationAddress?: string | null, pincode?: string | null) {
@@ -301,66 +183,6 @@ function sanitizeTags(tags?: Array<string | null | undefined> | null) {
 function normalizeOptionalText(value?: string | null) {
   const normalizedValue = value?.trim();
   return normalizedValue ? normalizedValue : null;
-}
-
-function parseWorkSummaryNote(note?: string | null): ComplaintWorkSummary | null {
-  const normalizedNote = note?.trim();
-
-  if (!normalizedNote) {
-    return null;
-  }
-
-  try {
-    const parsedValue = JSON.parse(normalizedNote) as {
-      kind?: string;
-      notes?: unknown;
-      laborCount?: unknown;
-      billAmount?: unknown;
-      invoiceVendorName?: unknown;
-      invoiceNumber?: unknown;
-      invoiceDate?: unknown;
-      materialsUsed?: unknown;
-    };
-
-    if (parsedValue.kind !== "complaint_work_summary_v1") {
-      throw new Error("Unsupported work summary note");
-    }
-
-    return {
-      notes:
-        typeof parsedValue.notes === "string" && parsedValue.notes.trim()
-          ? parsedValue.notes.trim()
-          : "Work completed on site.",
-      laborCount:
-        typeof parsedValue.laborCount === "number" && Number.isFinite(parsedValue.laborCount)
-          ? parsedValue.laborCount
-          : null,
-      billAmount:
-        typeof parsedValue.billAmount === "number" && Number.isFinite(parsedValue.billAmount)
-          ? parsedValue.billAmount
-          : null,
-      invoiceVendorName:
-        typeof parsedValue.invoiceVendorName === "string"
-          ? normalizeOptionalText(parsedValue.invoiceVendorName)
-          : null,
-      invoiceNumber:
-        typeof parsedValue.invoiceNumber === "string"
-          ? normalizeOptionalText(parsedValue.invoiceNumber)
-          : null,
-      invoiceDate:
-        typeof parsedValue.invoiceDate === "string"
-          ? normalizeOptionalText(parsedValue.invoiceDate)
-          : null,
-      materialsUsed:
-        typeof parsedValue.materialsUsed === "string"
-          ? normalizeOptionalText(parsedValue.materialsUsed)
-          : null
-    };
-  } catch {
-    return {
-      notes: normalizedNote
-    };
-  }
 }
 
 function serializeWorkSummaryNote(input: CompleteComplaintInput) {
@@ -402,134 +224,30 @@ function buildAssignmentCompletionNote(input: CompleteComplaintInput) {
   return details.join(" | ");
 }
 
-function normalizeStructuredAddressRecord(
-  value?: ComplaintStructuredAddress | null,
-  locationAddress?: string | null,
-  pincode?: string | null
-) {
-  const normalized = normalizeStructuredAddress(value);
-
-  if (normalized) {
-    return normalized;
-  }
-
-  const normalizedPincode = pincode?.trim() || "";
-  const parts =
-    locationAddress
-      ?.split(",")
-      .map((part) => part.trim())
-      .filter(Boolean) ?? [];
-
-  if (!parts.length && !normalizedPincode) {
-    return null;
-  }
-
-  return normalizeStructuredAddress({
-    houseNo: parts[0] ?? "",
-    street: parts[1] ?? "",
-    landmark: parts.length > 4 ? parts[2] : "",
-    area: parts.length > 3 ? parts[parts.length - 3] : parts[2] ?? parts[0] ?? "",
-    city: parts.length > 1 ? parts[parts.length - 2] : "",
-    pincode: normalizedPincode || parts[parts.length - 1] || ""
-  });
-}
-
-function buildProofItems(proofs: ProofRow[]) {
-  const afterImages = proofs.filter((proof) => (proof.proofType ?? "AFTER").toUpperCase() === "AFTER");
-  const documents = proofs.filter((proof) => (proof.proofType ?? "").toUpperCase() === "INVOICE");
-  const workSummary =
-    afterImages
-      .map((proof) => parseWorkSummaryNote(proof.note))
-      .find((summary): summary is ComplaintWorkSummary => Boolean(summary)) ??
-    documents
-      .map((proof) => parseWorkSummaryNote(proof.note))
-      .find((summary): summary is ComplaintWorkSummary => Boolean(summary)) ??
-    null;
-  const notes = workSummary?.notes ?? "";
-
-  const mapItem = (proof: ProofRow) => ({
-    id: String(proof.id),
-    url: toPublicUploadPath(proof.fileUrl),
-    label: (proof.proofType ?? "AFTER").toUpperCase() === "INVOICE" ? "Invoice document" : "Work proof",
-    kind: (proof.mimeType ?? "").toLowerCase().startsWith("image/") ? "image" : "document",
-    type: (proof.proofType ?? "AFTER").toUpperCase(),
-    uploadedAt: safeDate(proof.uploadedAt),
-    note: parseWorkSummaryNote(proof.note)?.notes ?? proof.note ?? undefined,
-    mimeType: proof.mimeType ?? null,
-    verificationStatus: null,
-    uploadedByName: proof.uploadedByName ?? null
-  });
-
-  return {
-    beforeImages: [] as string[],
-    afterImages: afterImages.map((proof) => toPublicUploadPath(proof.fileUrl)).filter(Boolean),
-    notes,
-    invoice: documents[0] ? toPublicUploadPath(documents[0].fileUrl) : undefined,
-    submittedAt: safeDate((afterImages[0] ?? documents[0])?.uploadedAt),
-    workSummary,
-    items: [...afterImages, ...documents].map(mapItem),
-    documents: documents.map(mapItem)
-  };
-}
-
-function buildCommentDto(comment: CommentRow) {
+function mapComment(comment: {
+  id: string;
+  complaintId: string;
+  comment: string;
+  createdAt: Date;
+  user: { id: string; fullName: string; role: UserRole };
+}) {
   return {
     id: comment.id,
     complaintId: comment.complaintId,
-    comment: comment.comment ?? "",
-    createdAt: safeDate(comment.createdAt),
+    comment: comment.comment,
+    createdAt: comment.createdAt.toISOString(),
     user: {
-      id: comment.senderId,
-      fullName: comment.senderName ?? "User",
-      role: comment.senderRole ?? UserRole.CITIZEN
+      id: comment.user.id,
+      fullName: comment.user.fullName,
+      role: comment.user.role
     }
   };
 }
 
-async function getAdminRecipientIds(department?: string | null) {
-  const result = await queryCivicPlatform<{ id: string }>(
-    `
-      SELECT id
-      FROM public.users
-      WHERE UPPER(COALESCE(role, '')) IN ('ADMIN', 'DEPARTMENT_ADMIN', 'SUPER_ADMIN')
-        AND (
-          $1::text IS NULL
-          OR COALESCE(department, '') = ''
-          OR LOWER(COALESCE(department, '')) = LOWER($1)
-          OR UPPER(COALESCE(role, '')) = 'SUPER_ADMIN'
-        )
-    `,
-    [department?.trim() || null]
-  );
-
-  return result.rows.map((row) => row.id);
-}
-
-async function getUserSummary(userId: string) {
-  const result = await queryCivicPlatform<{
-    id: string;
-    name: string | null;
-    email: string | null;
-    role: string | null;
-    department: string | null;
-    pincode: string | null;
-    status: string | null;
-  }>(
-    `
-      SELECT id, name, email, role, department, pincode, status
-      FROM public.users
-      WHERE id = $1
-      LIMIT 1
-    `,
-    [userId]
-  );
-
-  return result.rows[0] ?? null;
-}
-
 export class ComplaintsService {
   constructor(
-    private readonly complaintsRepository: ComplaintsRepository = new ComplaintsRepository()
+    private readonly complaintsRepository: ComplaintsRepository = new ComplaintsRepository(),
+    private readonly evidenceService: EvidenceService = new EvidenceService()
   ) {}
 
   analyzeComplaintDraft(input: Pick<CreateComplaintInput, "title" | "description">) {
@@ -553,149 +271,67 @@ export class ComplaintsService {
       );
     }
 
-    try {
-      const analysis = this.analyzeComplaintDraft({
-        title: data.title,
-        description: data.description
-      });
-      const structuredAddress = normalizeStructuredAddress(data.structuredAddress);
-      const fullAddress = (data.locationAddress?.trim() || buildFullAddress(structuredAddress)).trim();
-      const pincode =
-        data.pincode?.trim() ||
-        structuredAddress?.pincode ||
-        fullAddress.match(/\b\d{6}\b/)?.[0] ||
-        null;
-      const category = data.category?.trim() || analysis.category;
-      const department = data.departmentName?.trim() || analysis.department;
-      const priority = normalizePriority(data.priority ?? derivePriorityFromUrgency(analysis.urgency));
-      const primaryImagePath = files[0]?.path.replace(/\\/g, "/") ?? null;
+    const analysis = this.analyzeComplaintDraft({
+      title: data.title,
+      description: data.description
+    });
+    const structuredAddress = normalizeStructuredAddress(data.structuredAddress);
+    const fullAddress = (data.locationAddress?.trim() || buildFullAddress(structuredAddress)).trim();
+    const pincode =
+      data.pincode?.trim() ||
+      structuredAddress?.pincode ||
+      fullAddress.match(/\b\d{6}\b/)?.[0] ||
+      null;
+    const category = data.category?.trim() || analysis.category;
+    const priority = normalizePriority(data.priority ?? derivePriorityFromUrgency(analysis.urgency));
+    const departmentId = await this.resolveDepartmentId(data.departmentId, data.departmentName ?? analysis.department);
 
-      logger.info(
-        {
-          citizenId,
-          title: data.title.trim(),
-          category,
-          department,
-          priority,
-          pincode,
-          hasStructuredAddress: Boolean(structuredAddress),
-          hasCoordinates: data.latitude != null && data.longitude != null,
-          imageCount: files.length,
-          primaryImagePath,
-          ipAddress: requestContext?.ipAddress,
-          userAgent: requestContext?.userAgent
-        },
-        "Creating complaint"
-      );
+    logger.info(
+      {
+        citizenId,
+        category,
+        departmentId,
+        pincode,
+        imageCount: files.length,
+        ipAddress: requestContext?.ipAddress,
+        userAgent: requestContext?.userAgent
+      },
+      "Creating complaint with Prisma"
+    );
 
-      const created = await queryCivicPlatform<{ id: string }>(
-        `
-          INSERT INTO public.complaints (
-            title,
-            description,
-            issue_type,
-            urgency_score,
-            tags,
-            structured_address,
-            category,
-            department,
-            citizen_id,
-            priority,
-            pincode,
-            location_address,
-            latitude,
-            longitude,
-            image_url,
-            status,
-            created_at,
-            updated_at
-          )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6::jsonb,
-            $7,
-            $8,
-            $9,
-            $10,
-            $11,
-            $12,
-            $13,
-            $14,
-            $15,
-            'OPEN',
-            CURRENT_TIMESTAMP,
-            CURRENT_TIMESTAMP
-          )
-          RETURNING id
-        `,
-        [
-          data.title.trim(),
-          data.description.trim(),
-          analysis.issueType,
-          analysis.urgency,
-          analysis.suggestions.tags,
-          structuredAddress ? JSON.stringify(structuredAddress) : null,
-          category,
-          department,
-          citizenId,
-          priority,
-          pincode,
-          fullAddress || null,
-          data.latitude ?? null,
-          data.longitude ?? null,
-          primaryImagePath
-        ]
-      );
+    const createdComplaint = await this.complaintsRepository.createComplaint({
+      title: data.title.trim(),
+      description: data.description.trim(),
+      issueType: analysis.issueType,
+      urgencyScore: analysis.urgency,
+      tags: analysis.suggestions.tags,
+      structuredAddress,
+      category,
+      priority: priority.toUpperCase(),
+      locationAddress: fullAddress || null,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      departmentId,
+      imagePath: files[0]?.path.replace(/\\/g, "/"),
+      citizenId,
+      aiCategory: analysis.category,
+      aiPriority: priority.toUpperCase(),
+      aiConfidence: 0.8,
+      complaintImages: files.map((file, index) => ({
+        uploadedById: citizenId,
+        fileName: file.originalname,
+        filePath: file.path.replace(/\\/g, "/"),
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        note: index === 0 ? "Complaint submitted" : undefined
+      }))
+    });
 
-      const createdComplaintId = created.rows[0]?.id;
-
-      if (!createdComplaintId) {
-        throw new AppError(
-          "Complaint was created but no complaint id was returned",
-          StatusCodes.INTERNAL_SERVER_ERROR,
-          "COMPLAINT_ID_MISSING"
-        );
-      }
-
-      try {
-        return await this.getComplaintDtoOrThrow(createdComplaintId, {
-          id: citizenId,
-          email: "",
-          role: UserRole.CITIZEN
-        });
-      } catch (error) {
-        logger.warn(
-          {
-            error,
-            complaintId: createdComplaintId,
-            citizenId
-          },
-          "Complaint was created, but the immediate readback failed. Returning the complaint id only."
-        );
-
-        return {
-          id: createdComplaintId
-        };
-      }
-    } catch (error) {
-      logger.error(
-        {
-          error,
-          citizenId,
-          title: data.title?.trim(),
-          pincode: data.pincode?.trim(),
-          imageCount: files.length,
-          ipAddress: requestContext?.ipAddress,
-          userAgent: requestContext?.userAgent
-        },
-        "Complaint creation failed"
-      );
-      throw error;
-    }
+    return this.mapPrismaComplaintRecord(createdComplaint, {
+      id: citizenId,
+      email: "",
+      role: UserRole.CITIZEN
+    });
   }
 
   listComplaints(
@@ -811,14 +447,16 @@ export class ComplaintsService {
     actor: Actor,
     _requestContext?: ComplaintRequestContext
   ) {
-    const complaint = await this.getById(id, actor);
-    const nextStatus = normalizeInternalStatus(data.status);
-    const nextRejectionReason =
-      nextStatus === "REOPENED"
-        ? data.note?.trim() || complaint.rejectionReason || null
-        : null;
+    const complaint = await this.complaintsRepository.findById(id);
 
-    if (actor.role === UserRole.EMPLOYEE && complaint.assignedTo !== actor.id) {
+    if (!complaint) {
+      throw new AppError("Complaint not found", StatusCodes.NOT_FOUND, "COMPLAINT_NOT_FOUND");
+    }
+
+    const currentComplaint = this.mapPrismaComplaintRecord(complaint, actor);
+    this.ensureComplaintAccess(currentComplaint, actor, "participant");
+
+    if (actor.role === UserRole.EMPLOYEE && currentComplaint.assignedTo !== actor.id) {
       throw new AppError(
         "Employees can update only their assigned complaints",
         StatusCodes.FORBIDDEN,
@@ -826,50 +464,40 @@ export class ComplaintsService {
       );
     }
 
-    await queryCivicPlatform(
-      `
-        UPDATE public.complaints
-        SET
-          status = '${nextStatus}',
-          rejection_reason = $2,
-          resolved_at = CASE WHEN '${nextStatus}' = 'RESOLVED' THEN CURRENT_TIMESTAMP ELSE resolved_at END,
-          closed_at = CASE WHEN '${nextStatus}' = 'CLOSED' THEN CURRENT_TIMESTAMP ELSE NULL END,
-          reopened_at = CASE WHEN '${nextStatus}' = 'REOPENED' THEN CURRENT_TIMESTAMP ELSE reopened_at END,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-      `,
-      [id, nextRejectionReason]
+    const nextStatus = normalizeInternalStatus(data.status);
+    const now = new Date();
+    const statusTimestamps = {
+      resolvedAt: nextStatus === ComplaintStatus.RESOLVED ? now : complaint.resolvedAt,
+      closedAt: nextStatus === ComplaintStatus.CLOSED ? now : complaint.closedAt,
+      reopenedAt: nextStatus === ComplaintStatus.REOPENED ? now : complaint.reopenedAt,
+      rejectedAt: nextStatus === ComplaintStatus.REJECTED ? now : complaint.rejectedAt
+    };
+    const updatedComplaint = await this.complaintsRepository.updateStatus(
+      id,
+      nextStatus,
+      actor.id,
+      data.note?.trim(),
+      statusTimestamps
     );
 
-    const updatedComplaint = await this.getComplaintDtoOrThrow(id, actor);
+    const mappedComplaint = this.mapPrismaComplaintRecord(updatedComplaint, actor);
 
-    if (updatedComplaint.createdByUserId && updatedComplaint.createdByUserId !== actor.id) {
-      try {
-        await queueNotificationJob({
-          userId: updatedComplaint.createdByUserId,
-          complaintId: updatedComplaint.id,
-          // Keep the notification type broadly compatible with older civic-platform schemas.
-          type: "COMPLAINT_STATUS",
-          title: nextStatus === "CLOSED" ? "Complaint approved" : "Complaint updated",
-          message:
-            nextStatus === "CLOSED"
-              ? `Complaint ${updatedComplaint.id} has been approved and closed.`
-              : `Complaint ${updatedComplaint.id} is now ${updatedComplaint.status}.`
-        });
-      } catch (error) {
-        logger.warn(
-          {
-            err: error,
-            complaintId: updatedComplaint.id,
-            userId: updatedComplaint.createdByUserId,
-            nextStatus
-          },
-          "Complaint status was updated, but citizen notification could not be created"
-        );
-      }
+    if (mappedComplaint.createdByUserId && mappedComplaint.createdByUserId !== actor.id) {
+      await queueNotificationJob({
+        userId: mappedComplaint.createdByUserId,
+        complaintId: mappedComplaint.id,
+        type: "COMPLAINT_STATUS",
+        title: nextStatus === ComplaintStatus.CLOSED ? "Complaint approved" : "Complaint updated",
+        message:
+          nextStatus === ComplaintStatus.CLOSED
+            ? `Complaint ${mappedComplaint.id} has been approved and closed.`
+            : `Complaint ${mappedComplaint.id} is now ${mappedComplaint.status}.`
+      }).catch((error) => {
+        logger.warn({ error, complaintId: mappedComplaint.id }, "Failed to enqueue complaint status notification");
+      });
     }
 
-    return updatedComplaint;
+    return mappedComplaint;
   }
 
   async assignComplaint(
@@ -880,17 +508,18 @@ export class ComplaintsService {
   ) {
     this.assertAdmin(actor.role);
 
-    const complaint = await this.getComplaintDtoOrThrow(id, actor);
-    const employee = await getUserSummary(data.employeeId);
+    const complaint = await this.complaintsRepository.findById(id);
+    if (!complaint) {
+      throw new AppError("Complaint not found", StatusCodes.NOT_FOUND, "COMPLAINT_NOT_FOUND");
+    }
 
-    if (!employee || (employee.role ?? "").toUpperCase() !== "EMPLOYEE") {
+    const employee = await this.complaintsRepository.findEmployeeById(data.employeeId);
+    if (!employee || employee.role !== UserRole.EMPLOYEE || !employee.isActive) {
       throw new AppError("Assigned employee not found", StatusCodes.NOT_FOUND, "EMPLOYEE_NOT_FOUND");
     }
 
-    if (
-      complaint.department?.trim() &&
-      (!employee.department?.trim() || !departmentsMatch(complaint.department, employee.department))
-    ) {
+    const departmentId = data.departmentId ?? complaint.departmentId ?? employee.departmentId ?? undefined;
+    if (departmentId && employee.departmentId && employee.departmentId !== departmentId) {
       throw new AppError(
         "Selected employee does not belong to the complaint department",
         StatusCodes.BAD_REQUEST,
@@ -898,60 +527,39 @@ export class ComplaintsService {
       );
     }
 
-    await withCivicPlatformTransaction(async (client) => {
-      await client.query(
-        `
-          UPDATE public.complaints
-          SET
-            assigned_employee_id = $2,
-            department = COALESCE($3, department),
-            status = 'ASSIGNED',
-            rejection_reason = NULL,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = $1
-        `,
-        [id, data.employeeId, data.departmentId ?? employee.department ?? complaint.department]
-      );
-
-      await client.query(
-        `
-          INSERT INTO public.assignments (
-            complaint_id,
-            employee_uuid,
-            assigned_by_uuid,
-            status,
-            note,
-            assigned_at
-          )
-          VALUES ($1, $2, $3, 'ASSIGNED', $4, CURRENT_TIMESTAMP)
-        `,
-        [id, data.employeeId, actor.id, data.note?.trim() || null]
-      );
+    const updatedComplaint = await this.complaintsRepository.assignComplaint({
+      complaintId: id,
+      employeeId: data.employeeId,
+      departmentId,
+      assignedById: actor.id,
+      note: data.note?.trim(),
+      nextStatus: ComplaintStatus.ASSIGNED
     });
 
-    const updatedComplaint = await this.getComplaintDtoOrThrow(id, actor);
+    const mappedComplaint = this.mapPrismaComplaintRecord(updatedComplaint, actor);
 
-    if (updatedComplaint.assignedTo) {
-      await queueNotificationJob({
-        userId: updatedComplaint.assignedTo,
-        complaintId: updatedComplaint.id,
-        type: "ASSIGNMENT",
-        title: "Complaint assigned",
-        message: `Complaint ${updatedComplaint.id} has been assigned to you.`
-      });
-    }
+    await Promise.allSettled([
+      mappedComplaint.assignedTo
+        ? queueNotificationJob({
+            userId: mappedComplaint.assignedTo,
+            complaintId: mappedComplaint.id,
+            type: "ASSIGNMENT",
+            title: "Complaint assigned",
+            message: `Complaint ${mappedComplaint.id} has been assigned to you.`
+          })
+        : Promise.resolve(),
+      mappedComplaint.createdByUserId
+        ? queueNotificationJob({
+            userId: mappedComplaint.createdByUserId,
+            complaintId: mappedComplaint.id,
+            type: "ASSIGNMENT",
+            title: "Complaint assigned",
+            message: `Complaint ${mappedComplaint.id} has been assigned to the field team.`
+          })
+        : Promise.resolve()
+    ]);
 
-    if (updatedComplaint.createdByUserId) {
-      await queueNotificationJob({
-        userId: updatedComplaint.createdByUserId,
-        complaintId: updatedComplaint.id,
-        type: "ASSIGNMENT",
-        title: "Complaint assigned",
-        message: `Complaint ${updatedComplaint.id} has been assigned to the field team.`
-      });
-    }
-
-    return updatedComplaint;
+    return mappedComplaint;
   }
 
   async completeComplaint(
@@ -960,7 +568,7 @@ export class ComplaintsService {
     actor: Actor,
     proofImages: Express.Multer.File[] = [],
     invoiceFile?: Express.Multer.File,
-    _requestContext?: ComplaintRequestContext
+    requestContext?: ComplaintRequestContext
   ) {
     const complaint = await this.getById(id, actor);
 
@@ -980,69 +588,72 @@ export class ComplaintsService {
       );
     }
 
-    const latestAssignmentId = await this.getLatestAssignmentId(id, actor.id);
     const workSummaryNote = serializeWorkSummaryNote(data);
     const assignmentNote = buildAssignmentCompletionNote(data);
 
-    await withCivicPlatformTransaction(async (client) => {
-      for (const proofImage of proofImages) {
-        await this.insertProof(client, {
-          assignmentId: latestAssignmentId,
-          fileUrl: proofImage.path.replace(/\\/g, "/"),
-          fileName: proofImage.originalname,
-          mimeType: proofImage.mimetype,
-          note: workSummaryNote,
-          uploadedBy: actor.id,
-          proofType: "AFTER"
-        });
-      }
+    await this.complaintsRepository.updateStatus(
+      id,
+      ComplaintStatus.IN_PROGRESS,
+      actor.id,
+      "Work started"
+    );
 
-      if (invoiceFile) {
-        await this.insertProof(client, {
-          assignmentId: latestAssignmentId,
-          fileUrl: invoiceFile.path.replace(/\\/g, "/"),
-          fileName: invoiceFile.originalname,
-          mimeType: invoiceFile.mimetype,
-          note: workSummaryNote,
-          uploadedBy: actor.id,
-          proofType: "INVOICE"
-        });
-      }
-
-      await client.query(
-        `
-          UPDATE public.assignments
-          SET
-            status = 'COMPLETED',
-            note = $2,
-            proof = $3,
-            completed_at = CURRENT_TIMESTAMP
-          WHERE id = $1
-        `,
-        [latestAssignmentId, assignmentNote, proofImages[0]?.path.replace(/\\/g, "/") ?? null]
+    const evidence = [];
+    for (const proofImage of proofImages) {
+      evidence.push(
+        await this.evidenceService.createEvidence(
+          id,
+          {
+            type: "AFTER",
+            note: workSummaryNote,
+            latitude: data.latitude,
+            longitude: data.longitude
+          },
+          actor.id,
+          proofImage,
+          requestContext,
+          { notifyCitizen: false }
+        )
       );
+    }
 
-      await client.query(
-        `
-          UPDATE public.complaints
-          SET
-            status = 'RESOLVED',
-            resolved_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP,
-            rejection_reason = NULL
-          WHERE id = $1
-        `,
-        [id]
+    if (invoiceFile) {
+      evidence.push(
+        await this.evidenceService.createEvidence(
+          id,
+          {
+            type: "INVOICE",
+            note: workSummaryNote,
+            invoiceVendorName: data.invoiceVendorName,
+            invoiceNumber: data.invoiceNumber,
+            invoiceDate: data.invoiceDate,
+            invoiceAmount: data.billAmount
+          },
+          actor.id,
+          invoiceFile,
+          requestContext,
+          { notifyCitizen: false }
+        )
       );
-    });
+    }
 
-    const updatedComplaint = await this.getComplaintDtoOrThrow(id, actor);
-    const adminRecipients = await getAdminRecipientIds(updatedComplaint.department);
+    const updatedComplaint = await this.complaintsRepository.updateStatus(
+      id,
+      ComplaintStatus.RESOLVED,
+      actor.id,
+      assignmentNote,
+      {
+        resolvedAt: new Date(),
+        closedAt: null,
+        rejectedAt: null
+      }
+    );
 
-    await Promise.all(
-      adminRecipients.map((userId) =>
+    const adminRecipients = await this.complaintsRepository.listAdminRecipients(updatedComplaint.departmentId);
+    await Promise.allSettled(
+      adminRecipients.map((recipient) =>
         queueNotificationJob({
-          userId,
+          userId: recipient.id,
           complaintId: updatedComplaint.id,
           type: "EVIDENCE",
           title: "Employee submitted proof",
@@ -1052,8 +663,8 @@ export class ComplaintsService {
     );
 
     return {
-      complaint: updatedComplaint,
-      evidence: updatedComplaint.proof?.items ?? []
+      complaint: this.mapPrismaComplaintRecord(updatedComplaint, actor),
+      evidence
     };
   }
 
@@ -1062,14 +673,13 @@ export class ComplaintsService {
     data: SubmitComplaintProofInput,
     actor: Actor,
     file?: Express.Multer.File,
-    _requestContext?: ComplaintRequestContext
+    requestContext?: ComplaintRequestContext
   ) {
     if (!file) {
       throw new AppError("Evidence file is required", StatusCodes.BAD_REQUEST, "FILE_REQUIRED");
     }
 
     const complaint = await this.getById(id, actor);
-
     if (actor.role !== UserRole.EMPLOYEE || complaint.assignedTo !== actor.id) {
       throw new AppError(
         "Only the assigned employee can submit work proof",
@@ -1078,50 +688,47 @@ export class ComplaintsService {
       );
     }
 
-    const latestAssignmentId = await this.getLatestAssignmentId(id, actor.id);
-
-    await withCivicPlatformTransaction(async (client) => {
-      await this.insertProof(client, {
-        assignmentId: latestAssignmentId,
-        fileUrl: file.path.replace(/\\/g, "/"),
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-        note: data.note,
-        uploadedBy: actor.id,
-        proofType: data.type
-      });
-
-      await client.query(
-        `
-          UPDATE public.assignments
-          SET
-            note = $2,
-            proof = $3,
-            status = CASE WHEN $4::boolean THEN 'COMPLETED' ELSE status END,
-            completed_at = CASE WHEN $4::boolean THEN CURRENT_TIMESTAMP ELSE completed_at END
-          WHERE id = $1
-        `,
-        [latestAssignmentId, data.note.trim(), file.path.replace(/\\/g, "/"), data.markAsCompleted !== false]
+    if (data.type === "AFTER" || data.type === "INVOICE") {
+      await this.complaintsRepository.updateStatus(
+        id,
+        ComplaintStatus.IN_PROGRESS,
+        actor.id,
+        "Work proof submitted"
       );
+    }
 
-      await client.query(
-        `
-          UPDATE public.complaints
-          SET
-            status = CASE WHEN $2::boolean THEN 'RESOLVED' ELSE 'IN_PROGRESS' END,
-            resolved_at = CASE WHEN $2::boolean THEN CURRENT_TIMESTAMP ELSE resolved_at END,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = $1
-        `,
-        [id, data.markAsCompleted !== false]
-      );
-    });
+    const evidence = await this.evidenceService.createEvidence(
+      id,
+      {
+        type: data.type,
+        note: data.note.trim(),
+        invoiceVendorName: data.invoiceVendorName,
+        invoiceNumber: data.invoiceNumber,
+        invoiceDate: data.invoiceDate,
+        invoiceAmount: data.invoiceAmount,
+        latitude: data.latitude,
+        longitude: data.longitude
+      },
+      actor.id,
+      file,
+      requestContext
+    );
 
-    const updatedComplaint = await this.getComplaintDtoOrThrow(id, actor);
+    const updatedComplaint = await this.complaintsRepository.updateStatus(
+      id,
+      data.markAsCompleted === false ? ComplaintStatus.IN_PROGRESS : ComplaintStatus.RESOLVED,
+      actor.id,
+      data.note.trim(),
+      data.markAsCompleted === false
+        ? {}
+        : {
+            resolvedAt: new Date()
+          }
+    );
 
     return {
-      complaint: updatedComplaint,
-      evidence: updatedComplaint.proof?.items ?? []
+      complaint: this.mapPrismaComplaintRecord(updatedComplaint, actor),
+      evidence: [evidence]
     };
   }
 
@@ -1134,8 +741,7 @@ export class ComplaintsService {
     this.assertAdmin(actor.role);
 
     const complaint = await this.getComplaintDtoOrThrow(id, actor);
-
-    if (complaint.internalStatus !== "RESOLVED") {
+    if (complaint.internalStatus !== ComplaintStatus.RESOLVED) {
       throw new AppError(
         "Only completed complaints can be verified by admin",
         StatusCodes.BAD_REQUEST,
@@ -1146,7 +752,7 @@ export class ComplaintsService {
     return this.updateStatus(
       id,
       {
-        status: data.action === "approve" ? "CLOSED" : "REOPENED",
+        status: data.action === "approve" ? ComplaintStatus.CLOSED : ComplaintStatus.REOPENED,
         note:
           data.note ??
           (data.action === "approve"
@@ -1159,104 +765,61 @@ export class ComplaintsService {
   }
 
   async getTimeline(id: string, actor: Actor) {
-    const complaint = await this.getById(id, actor);
-    return [
-      {
-        id: `${complaint.id}-created`,
-        title: "Complaint submitted",
-        createdAt: complaint.createdAt
-      },
-      ...(complaint.assignedTo
-        ? [
-            {
-              id: `${complaint.id}-assigned`,
-              title: "Complaint assigned",
-              createdAt: complaint.createdAt
-            }
-          ]
-        : []),
-      ...(complaint.proof?.submittedAt
-        ? [
-            {
-              id: `${complaint.id}-proof`,
-              title: "Proof submitted",
-              createdAt: complaint.proof.submittedAt
-            }
-          ]
-        : []),
-      ...(complaint.resolvedAt
-        ? [
-            {
-              id: `${complaint.id}-resolved`,
-              title: "Complaint approved",
-              createdAt: complaint.resolvedAt
-            }
-          ]
-        : [])
-    ];
+    await this.getById(id, actor);
+    const timeline = await this.complaintsRepository.getTimeline(id);
+
+    return timeline.map((entry) => ({
+      ...entry,
+      createdAt: entry.createdAt.toISOString(),
+      createdBy: entry.createdBy
+        ? {
+            id: entry.createdBy.id,
+            fullName: entry.createdBy.fullName,
+            role: entry.createdBy.role
+          }
+        : null
+    }));
   }
 
   async addComment(id: string, data: AddCommentInput, actor: Actor) {
-    const complaint = await this.getById(id, actor);
+    const complaint = await this.complaintsRepository.findById(id);
+    if (!complaint) {
+      throw new AppError("Complaint not found", StatusCodes.NOT_FOUND, "COMPLAINT_NOT_FOUND");
+    }
 
-    const result = await queryCivicPlatform<{ id: number }>(
-      `
-        INSERT INTO public.comments (
-          complaint_id,
-          sender_id,
-          comment,
-          created_at
-        )
-        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-        RETURNING id
-      `,
-      [id, actor.id, data.comment.trim()]
-    );
+    const complaintDto = this.mapPrismaComplaintRecord(complaint, actor);
+    this.ensureComplaintAccess(complaintDto, actor, "participant");
 
-    const comments = await this.listComments(id, actor);
-    const createdComment = comments.find((comment) => comment.id === result.rows[0].id);
+    const updatedComplaint = await this.complaintsRepository.addComment({
+      complaintId: id,
+      userId: actor.id,
+      comment: data.comment.trim()
+    });
 
+    const createdComment = updatedComplaint.comments[updatedComplaint.comments.length - 1];
     if (!createdComment) {
       throw new AppError("Comment not found", StatusCodes.NOT_FOUND, "COMMENT_NOT_FOUND");
     }
 
-    if (complaint.createdByUserId && complaint.createdByUserId !== actor.id) {
+    if (complaintDto.createdByUserId && complaintDto.createdByUserId !== actor.id) {
       await queueNotificationJob({
-        userId: complaint.createdByUserId,
+        userId: complaintDto.createdByUserId,
         complaintId: id,
         type: "SYSTEM",
         title: "New complaint comment",
         message: `A new comment was added to complaint ${id}.`
+      }).catch((error) => {
+        logger.warn({ error, complaintId: id }, "Failed to enqueue complaint comment notification");
       });
     }
 
-    return createdComment;
+    return mapComment(createdComment);
   }
 
   async listComments(id: string, actor: Actor) {
     await this.getById(id, actor);
-
-    const result = await queryCivicPlatform<CommentRow>(
-      `
-        SELECT
-          c.id,
-          c.complaint_id AS "complaintId",
-          c.sender_id AS "senderId",
-          u.name AS "senderName",
-          u.role AS "senderRole",
-          c.comment,
-          c.created_at::text AS "createdAt"
-        FROM public.comments c
-        LEFT JOIN public.users u
-          ON u.id = c.sender_id
-        WHERE c.complaint_id = $1
-          AND c.receiver_id IS NULL
-        ORDER BY c.created_at ASC, c.id ASC
-      `,
-      [id]
-    );
-
-    return result.rows.map(buildCommentDto);
+    const comments = await this.complaintsRepository.listComments(id);
+    return comments.map(mapComment);
   }
 
   async reopenComplaint(
@@ -1266,7 +829,6 @@ export class ComplaintsService {
     _requestContext?: ComplaintRequestContext
   ) {
     const complaint = await this.getComplaintDtoOrThrow(id, actor);
-
     if (actor.role !== UserRole.CITIZEN || complaint.createdByUserId !== actor.id) {
       throw new AppError(
         "Only the complaint owner can reopen the complaint",
@@ -1278,7 +840,7 @@ export class ComplaintsService {
     return this.updateStatus(
       id,
       {
-        status: "REOPENED",
+        status: ComplaintStatus.REOPENED,
         note: data.reason
       },
       actor
@@ -1291,9 +853,12 @@ export class ComplaintsService {
     actor: Actor,
     _requestContext?: ComplaintRequestContext
   ) {
-    const complaint = await this.getComplaintDtoOrThrow(id, actor);
+    const complaint = await this.complaintsRepository.findById(id);
+    if (!complaint) {
+      throw new AppError("Complaint not found", StatusCodes.NOT_FOUND, "COMPLAINT_NOT_FOUND");
+    }
 
-    if (actor.role !== UserRole.CITIZEN || complaint.createdByUserId !== actor.id) {
+    if (actor.role !== UserRole.CITIZEN || complaint.citizenId !== actor.id) {
       throw new AppError(
         "Only the complaint owner can submit feedback",
         StatusCodes.FORBIDDEN,
@@ -1301,18 +866,7 @@ export class ComplaintsService {
       );
     }
 
-    const existingFeedback = await queryCivicPlatform<{ id: number }>(
-      `
-        SELECT id
-        FROM public.ratings
-        WHERE complaint_id = $1
-          AND citizen_uuid = $2
-        LIMIT 1
-      `,
-      [id, actor.id]
-    );
-
-    if (existingFeedback.rows[0]) {
+    if (complaint.feedback) {
       throw new AppError(
         "Feedback has already been submitted for this complaint",
         StatusCodes.CONFLICT,
@@ -1320,31 +874,30 @@ export class ComplaintsService {
       );
     }
 
-    const created = await queryCivicPlatform<{
-      id: number;
-      rating: number;
-      feedback: string | null;
-      createdAt: string | null;
-    }>(
-      `
-        INSERT INTO public.ratings (
-          complaint_id,
-          citizen_uuid,
-          rating,
-          feedback,
-          created_at
-        )
-        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-        RETURNING
-          id,
-          rating,
-          feedback,
-          created_at::text AS "createdAt"
-      `,
-      [id, actor.id, data.rating, data.comment?.trim() || null]
-    );
+    const createdFeedback = await this.complaintsRepository.createFeedback({
+      complaintId: id,
+      citizenId: actor.id,
+      departmentId: complaint.departmentId,
+      officerId: complaint.assignedEmployeeId,
+      rating: data.rating,
+      comment: data.comment?.trim()
+    });
 
-    return created.rows[0];
+    return createdFeedback.feedback;
+  }
+
+  private async resolveDepartmentId(departmentId?: string, departmentName?: string) {
+    if (departmentId) {
+      const department = await this.complaintsRepository.findDepartmentById(departmentId);
+      return department?.id;
+    }
+
+    if (departmentName?.trim()) {
+      const department = await this.complaintsRepository.findDepartmentByName(departmentName.trim());
+      return department?.id;
+    }
+
+    return undefined;
   }
 
   private async fetchComplaintDtos(
@@ -1361,134 +914,20 @@ export class ComplaintsService {
       search?: string;
     }
   ) {
-    const params: unknown[] = [];
-    const where: string[] = [];
-
-    if (actor.role === UserRole.EMPLOYEE) {
-      params.push(actor.id);
-      where.push(`c.assigned_employee_id = $${params.length}`);
-    } else if (actor.role === UserRole.CITIZEN && filters.mine) {
-      params.push(actor.id);
-      where.push(`c.citizen_id = $${params.length}`);
-    }
-
-    if (filters.status) {
-      params.push(normalizeInternalStatus(filters.status));
-      where.push(`UPPER(COALESCE(c.status, 'OPEN')) = $${params.length}`);
-    }
-
-    if (filters.assignedEmployeeId) {
-      params.push(filters.assignedEmployeeId);
-      where.push(`c.assigned_employee_id = $${params.length}`);
-    }
-
-    if (filters.citizenId && actor.role !== UserRole.CITIZEN) {
-      params.push(filters.citizenId);
-      where.push(`c.citizen_id = $${params.length}`);
-    }
-
-    if (filters.category?.trim()) {
-      params.push(filters.category.trim());
-      where.push(`LOWER(COALESCE(c.category, '')) = LOWER($${params.length})`);
-    }
-
-    if (filters.priority?.trim()) {
-      params.push(filters.priority.trim());
-      where.push(`LOWER(COALESCE(c.priority, '')) = LOWER($${params.length})`);
-    }
-
-    if (filters.pincode?.trim()) {
-      params.push(filters.pincode.trim());
-      where.push(`COALESCE(c.pincode, '') ILIKE $${params.length}`);
-    }
-
-    if (filters.search?.trim()) {
-      params.push(`%${filters.search.trim()}%`);
-      where.push(`
-        (
-          COALESCE(c.title, '') ILIKE $${params.length}
-          OR COALESCE(c.description, '') ILIKE $${params.length}
-          OR COALESCE(c.issue_type, '') ILIKE $${params.length}
-          OR COALESCE(array_to_string(c.tags, ' '), '') ILIKE $${params.length}
-          OR COALESCE(c.location_address, '') ILIKE $${params.length}
-          OR COALESCE(c.department, '') ILIKE $${params.length}
-        )
-      `);
-    }
-
-    try {
-      const result = await queryCivicPlatform<ComplaintRow>(
-        `
-          SELECT ${baseComplaintSelect}
-          FROM public.complaints c
-          LEFT JOIN public.users citizen
-            ON citizen.id = c.citizen_id
-          LEFT JOIN public.users employee
-            ON employee.id = c.assigned_employee_id
-          ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-          ORDER BY c.created_at DESC NULLS LAST, c.id DESC
-        `,
-        params
-      );
-
-      return this.mapComplaintRows(result.rows, actor);
-    } catch (error) {
-      logger.warn(
-        {
-          error,
-          actorId: actor.id,
-          actorRole: actor.role
-        },
-        "Legacy complaint query failed. Falling back to Prisma complaint reads."
-      );
-
-      const complaints = await this.complaintsRepository.listMany(
-        this.buildPrismaComplaintWhere(actor, filters)
-      );
-      return complaints.map((complaint) => this.mapPrismaComplaintListRecord(complaint, actor));
-    }
+    const complaints = await this.complaintsRepository.listMany(
+      this.buildPrismaComplaintWhere(actor, filters)
+    );
+    return complaints.map((complaint) => this.mapPrismaComplaintListRecord(complaint, actor));
   }
 
   private async getComplaintDtoOrThrow(id: string, actor: Actor) {
-    try {
-      const result = await queryCivicPlatform<ComplaintRow>(
-        `
-          SELECT ${baseComplaintSelect}
-          FROM public.complaints c
-          LEFT JOIN public.users citizen
-            ON citizen.id = c.citizen_id
-          LEFT JOIN public.users employee
-            ON employee.id = c.assigned_employee_id
-          WHERE c.id = $1
-          LIMIT 1
-        `,
-        [id]
-      );
+    const complaint = await this.complaintsRepository.findById(id);
 
-      if (!result.rows[0]) {
-        throw new AppError("Complaint not found", StatusCodes.NOT_FOUND, "COMPLAINT_NOT_FOUND");
-      }
-
-      const complaints = await this.mapComplaintRows([result.rows[0]], actor);
-      return complaints[0];
-    } catch (error) {
-      logger.warn(
-        {
-          error,
-          complaintId: id,
-          actorId: actor.id
-        },
-        "Legacy complaint detail query failed. Falling back to Prisma complaint detail."
-      );
-
-      const complaint = await this.complaintsRepository.findById(id);
-
-      if (!complaint) {
-        throw new AppError("Complaint not found", StatusCodes.NOT_FOUND, "COMPLAINT_NOT_FOUND");
-      }
-
-      return this.mapPrismaComplaintRecord(complaint, actor);
+    if (!complaint) {
+      throw new AppError("Complaint not found", StatusCodes.NOT_FOUND, "COMPLAINT_NOT_FOUND");
     }
+
+    return this.mapPrismaComplaintRecord(complaint, actor);
   }
 
   private buildPrismaComplaintWhere(
@@ -1656,200 +1095,25 @@ export class ComplaintsService {
             invoice: documents[0]?.url,
             submittedAt: complaint.evidenceItems[0]?.createdAt.toISOString() ?? complaint.updatedAt.toISOString(),
             workSummary: null,
-            items: documents,
+            items: [
+              ...complaint.evidenceItems.map((item) => ({
+                id: item.id,
+                url: toPublicUploadPath(item.filePath),
+                label: item.fileName,
+                kind: item.mimeType.toLowerCase().startsWith("image/") ? "image" : "document",
+                type: item.type,
+                uploadedAt: item.createdAt.toISOString(),
+                note: item.note ?? undefined,
+                mimeType: item.mimeType,
+                verificationStatus: item.verificationStatus ?? null,
+                uploadedByName: item.uploadedBy.fullName
+              }))
+            ],
             documents
           }
         : null,
-      rejectionReason: complaint.status === "REJECTED" ? "Rejected" : null
+      rejectionReason: complaint.status === ComplaintStatus.REJECTED ? "Rejected" : null
     };
-  }
-
-  private async mapComplaintRows(rows: ComplaintRow[], actor: Actor) {
-    if (!rows.length) {
-      return [];
-    }
-
-    const complaintIds = rows.map((row) => row.id);
-
-    const [assignmentsResult, proofsResult, ratingsResult] = await Promise.all([
-      queryCivicPlatform<AssignmentRow>(
-        `
-          SELECT
-            a.id,
-            a.complaint_id AS "complaintId",
-            a.employee_uuid AS "employeeId",
-            u.name AS "employeeName",
-            u.department AS "employeeDepartment",
-            a.note,
-            a.status,
-            a.assigned_at::text AS "assignedAt",
-            a.completed_at::text AS "completedAt"
-          FROM public.assignments a
-          LEFT JOIN public.users u
-            ON u.id = a.employee_uuid
-          WHERE a.complaint_id = ANY($1::uuid[])
-          ORDER BY a.assigned_at DESC NULLS LAST, a.id DESC
-        `,
-        [complaintIds]
-      ),
-      queryCivicPlatform<ProofRow>(
-        `
-          SELECT
-            p.id,
-            a.complaint_id AS "complaintId",
-            p.assignment_id AS "assignmentId",
-            p.file_url AS "fileUrl",
-            p.uploaded_at::text AS "uploadedAt",
-            p.proof_type AS "proofType",
-            p.note,
-            p.file_name AS "fileName",
-            p.mime_type AS "mimeType",
-            p.uploaded_by AS "uploadedBy",
-            u.name AS "uploadedByName",
-            u.role AS "uploadedByRole"
-          FROM public.proofs p
-          INNER JOIN public.assignments a
-            ON a.id = p.assignment_id
-          LEFT JOIN public.users u
-            ON u.id = p.uploaded_by
-          WHERE a.complaint_id = ANY($1::uuid[])
-          ORDER BY p.uploaded_at DESC NULLS LAST, p.id DESC
-        `,
-        [complaintIds]
-      ),
-      queryCivicPlatform<RatingRow>(
-        `
-          SELECT
-            id,
-            complaint_id AS "complaintId",
-            citizen_uuid AS "citizenId",
-            rating,
-            feedback,
-            created_at::text AS "createdAt"
-          FROM public.ratings
-          WHERE complaint_id = ANY($1::uuid[])
-          ORDER BY created_at DESC NULLS LAST, id DESC
-        `,
-        [complaintIds]
-      )
-    ]);
-
-    const assignmentsByComplaint = new Map<string, AssignmentRow[]>();
-    const proofsByComplaint = new Map<string, ProofRow[]>();
-    const ratingsByComplaint = new Map<string, RatingRow[]>();
-
-    for (const assignment of assignmentsResult.rows) {
-      if (!assignment.complaintId) continue;
-      const entries = assignmentsByComplaint.get(assignment.complaintId) ?? [];
-      entries.push(assignment);
-      assignmentsByComplaint.set(assignment.complaintId, entries);
-    }
-
-    for (const proof of proofsResult.rows) {
-      if (!proof.complaintId) continue;
-      const entries = proofsByComplaint.get(proof.complaintId) ?? [];
-      entries.push(proof);
-      proofsByComplaint.set(proof.complaintId, entries);
-    }
-
-    for (const rating of ratingsResult.rows) {
-      if (!rating.complaintId) continue;
-      const entries = ratingsByComplaint.get(rating.complaintId) ?? [];
-      entries.push(rating);
-      ratingsByComplaint.set(rating.complaintId, entries);
-    }
-
-    return rows.map((row) => {
-      const internalStatus = normalizeInternalStatus(row.status);
-      const assignments = assignmentsByComplaint.get(row.id) ?? [];
-      const proofs = proofsByComplaint.get(row.id) ?? [];
-      const rating = (ratingsByComplaint.get(row.id) ?? [])[0];
-      const latestAssignment = assignments[0];
-      const proof = proofs.length ? buildProofItems(proofs) : null;
-      const structuredAddress = normalizeStructuredAddressRecord(
-        row.structuredAddress,
-        row.locationAddress,
-        row.pincode
-      );
-      const pincode = row.pincode?.trim() || structuredAddress?.pincode || "";
-      const area = structuredAddress?.area || deriveArea(row.locationAddress, pincode);
-      const address = row.locationAddress?.trim() || buildFullAddress(structuredAddress) || area;
-      const urgencyScore =
-        row.urgencyScore ??
-        (normalizePriority(row.priority) === "High"
-          ? 85
-          : normalizePriority(row.priority) === "Low"
-            ? 54
-            : 68);
-      const tags = sanitizeTags(
-        row.tags?.length ? row.tags : [row.issueType, row.category, row.department]
-      );
-      const isCitizenViewer = actor.role === UserRole.CITIZEN;
-      const isOwner = row.citizenId === actor.id;
-      const createdBy = isCitizenViewer && !isOwner ? "Citizen" : row.citizenName ?? "Citizen";
-      const beforeImage = toPublicUploadPath(row.imageUrl);
-
-      return {
-        id: row.id,
-        title: row.title?.trim() || "Untitled complaint",
-        issueType: row.issueType?.trim() || row.category?.trim() || "General civic issue",
-        urgencyScore,
-        tags,
-        structuredAddress,
-        category: row.category?.trim() || "Other",
-        department: row.department?.trim() || latestAssignment?.employeeDepartment || "Unassigned",
-        area,
-        address,
-        pincode,
-        status: toFriendlyStatus(internalStatus),
-        internalStatus,
-        priority: normalizePriority(row.priority),
-        createdAt: safeDate(row.createdAt),
-        submittedAt: safeDate(row.createdAt).slice(0, 10),
-        resolvedAt: row.closedAt ?? row.resolvedAt ?? undefined,
-        sentimentScore: 78,
-        aiUrgency: urgencyScore,
-        rating: rating?.rating ?? undefined,
-        feedbackComment: rating?.feedback ?? null,
-        citizen: createdBy,
-        createdBy,
-        createdByUserId: row.citizenId,
-        viewerIsComplaintOwner: isOwner,
-        lat: toNumber(row.latitude),
-        lng: toNumber(row.longitude),
-        description: row.description?.trim() || "",
-        beforeImage: beforeImage || "",
-        citizenImages: beforeImage ? [beforeImage] : [],
-        hasOriginalBeforeImage: Boolean(beforeImage),
-        afterImage: proof?.afterImages[0],
-        assignedTo: row.assignedEmployeeId,
-        assignedEmployeeName: row.assignedEmployeeName ?? latestAssignment?.employeeName ?? null,
-        assignedEmployeeDepartment:
-          row.assignedEmployeeDepartment ?? latestAssignment?.employeeDepartment ?? null,
-        assignedEmployeeInfo:
-          row.assignedEmployeeId || latestAssignment?.employeeId
-            ? {
-                id: row.assignedEmployeeId ?? latestAssignment?.employeeId ?? null,
-                name: row.assignedEmployeeName ?? latestAssignment?.employeeName ?? "Assigned employee",
-                department:
-                  row.assignedEmployeeDepartment ??
-                  latestAssignment?.employeeDepartment ??
-                  row.department ??
-                  null,
-                workStatus: toWorkStatus(internalStatus)
-              }
-            : null,
-        assignedEmployeeStatus: toWorkStatus(internalStatus),
-        locationSummary: [area, structuredAddress?.city, pincode].filter(Boolean).join(" | "),
-        proof,
-        rejectionReason: row.rejectionReason,
-        aiSuggestion: {
-          category: row.category?.trim() || "Other",
-          department: row.department?.trim() || "Unassigned",
-          label: `${row.category?.trim() || "Other"} • ${row.department?.trim() || "Unassigned"}`
-        }
-      };
-    });
   }
 
   private ensureComplaintAccess(
@@ -1886,69 +1150,5 @@ export class ComplaintsService {
     if (!adminRoles.has(role)) {
       throw new AppError("Forbidden", StatusCodes.FORBIDDEN, "FORBIDDEN");
     }
-  }
-
-  private async getLatestAssignmentId(complaintId: string, employeeId: string) {
-    const result = await queryCivicPlatform<{ id: number }>(
-      `
-        SELECT id
-        FROM public.assignments
-        WHERE complaint_id = $1
-          AND employee_uuid = $2
-        ORDER BY assigned_at DESC NULLS LAST, id DESC
-        LIMIT 1
-      `,
-      [complaintId, employeeId]
-    );
-
-    const assignmentId = result.rows[0]?.id;
-
-    if (!assignmentId) {
-      throw new AppError(
-        "No active assignment was found for this complaint",
-        StatusCodes.BAD_REQUEST,
-        "ASSIGNMENT_NOT_FOUND"
-      );
-    }
-
-    return assignmentId;
-  }
-
-  private insertProof(
-    client: PoolClient,
-    input: {
-      assignmentId: number;
-      fileUrl: string;
-      fileName: string;
-      mimeType: string;
-      note: string;
-      uploadedBy: string;
-      proofType: string;
-    }
-  ) {
-    return client.query(
-      `
-        INSERT INTO public.proofs (
-          assignment_id,
-          file_url,
-          uploaded_at,
-          proof_type,
-          note,
-          file_name,
-          mime_type,
-          uploaded_by
-        )
-        VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4, $5, $6, $7)
-      `,
-      [
-        input.assignmentId,
-        input.fileUrl,
-        input.proofType,
-        input.note.trim(),
-        input.fileName,
-        input.mimeType,
-        input.uploadedBy
-      ]
-    );
   }
 }

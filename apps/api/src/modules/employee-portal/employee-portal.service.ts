@@ -535,12 +535,12 @@ export class EmployeePortalService {
     }>(
       `
         SELECT
-          complaint_id AS "complaintId",
-          assigned_at::text AS "assignedAt"
-        FROM public.assignments
-        WHERE complaint_id = ANY($1::uuid[])
-          AND employee_uuid = $2
-        ORDER BY assigned_at DESC NULLS LAST, id DESC
+          "complaintId" AS "complaintId",
+          "createdAt"::text AS "assignedAt"
+        FROM public.complaint_assignment
+        WHERE "complaintId" = ANY($1::text[])
+          AND "employeeId" = $2
+        ORDER BY "createdAt" DESC NULLS LAST, id DESC
       `,
       [complaintIds, employeeId]
     );

@@ -172,6 +172,10 @@ export class ComplaintsRepository {
   createComplaint(data: {
     title: string;
     description: string;
+    issueType?: string;
+    urgencyScore?: number;
+    tags?: string[];
+    structuredAddress?: Prisma.InputJsonValue;
     category?: string;
     priority?: string;
     locationAddress?: string;
@@ -180,6 +184,9 @@ export class ComplaintsRepository {
     departmentId?: string;
     imagePath?: string;
     citizenId: string;
+    aiCategory?: string;
+    aiPriority?: string;
+    aiConfidence?: number;
     duplicateScore?: number;
     fraudScore?: number;
     isSuspicious?: boolean;
@@ -305,6 +312,23 @@ export class ComplaintsRepository {
       select: {
         ...userSummarySelect,
         isActive: true
+      }
+    });
+  }
+
+  listAdminRecipients(departmentId?: string | null) {
+    return prisma.user.findMany({
+      where: {
+        OR: [
+          { role: UserRole.SUPER_ADMIN },
+          {
+            role: UserRole.DEPARTMENT_ADMIN,
+            ...(departmentId ? { departmentId } : {})
+          }
+        ]
+      },
+      select: {
+        id: true
       }
     });
   }
