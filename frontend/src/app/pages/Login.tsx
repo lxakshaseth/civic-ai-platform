@@ -441,10 +441,6 @@ export default function Login() {
                   </TabsContent>
                 </Tabs>
 
-                <div className="mb-4 rounded-xl border border-white/20 bg-white/5 p-3 text-xs text-blue-100">
-                  Login now uses the configured API base URL from <span className="font-semibold text-white">VITE_API_BASE_URL</span> or <span className="font-semibold text-white">NEXT_PUBLIC_API_BASE_URL</span>. For seeded admin accounts, use password <span className="font-semibold text-white">admin123</span>.
-                </div>
-
                 {/* Footer Links */}
                 <div className="border-t-2 border-white/20 pt-4 space-y-3">
                   <div className="text-center text-xs">
