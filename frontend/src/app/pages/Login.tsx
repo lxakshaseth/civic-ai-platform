@@ -62,7 +62,7 @@ export default function Login() {
 
       toast.error(
         isSeededAdminCredentialError
-          ? "For seeded admin accounts, use password admin123. The database hash will not work as a login password."
+          // ? "For seeded admin accounts, use password admin123. The database hash will not work as a login password."
           : errorMessage
       );
     } finally {
