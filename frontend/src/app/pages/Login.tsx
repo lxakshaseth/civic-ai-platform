@@ -59,12 +59,11 @@ export default function Login() {
           : "Invalid credentials. Please check your email and password.";
       const isSeededAdminCredentialError =
         role === "admin" && /invalid email or password/i.test(errorMessage);
+      const loginErrorMessage = isSeededAdminCredentialError
+        ? "For seeded admin accounts, use password admin123. The database hash will not work as a login password."
+        : errorMessage;
 
-      toast.error(
-        isSeededAdminCredentialError
-           ? "For seeded admin accounts, use password admin123. The database hash will not work as a login password."
-          : errorMessage
-      );
+      toast.error(loginErrorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -404,11 +403,6 @@ export default function Login() {
                             {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                           </button>
                         </div>
-                        {role === "admin" ? (
-                          <p className="text-[11px] text-amber-200">
-                            Seeded admin emails like <span className="font-semibold text-white">admin18@saip.com</span> use password <span className="font-semibold text-white">admin123</span>.
-                          </p>
-                        ) : null}
                       </div>
 
                       <div className="flex items-center justify-between">
