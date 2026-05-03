@@ -142,18 +142,18 @@ const employeeDirectoryBaseSelect = `
   phone,
   status,
   NULL::text AS "dateOfBirth",
-  NULL::text AS "aadharNumber",
-  NULL::text AS "panNumber",
-  NULL::text AS "permanentAddress",
-  NULL::text AS "temporaryAddress",
-  NULL::text AS "bankName",
-  NULL::text AS "ifscCode",
-  NULL::text AS "accountNumber",
-  NULL::text AS "guardianName",
-  NULL::text AS relation,
-  NULL::text AS "guardianPhone",
+  aadhar_number AS "aadharNumber",
+  pan_number AS "panNumber",
+  permanent_address AS "permanentAddress",
+  temporary_address AS "temporaryAddress",
+  bank_name AS "bankName",
+  ifsc_code AS "ifscCode",
+  account_number AS "accountNumber",
+  guardian_name AS "guardianName",
+  relation,
+  guardian_phone AS "guardianPhone",
   pincode,
-  NULL::text AS category,
+  category,
   created_at::text AS "createdAt"
 `;
 
@@ -311,6 +311,21 @@ export class EmployeeDirectoryRepository {
     if (data.department !== undefined) {
       pushUpdate("department", data.department);
     }
+    if (data.category !== undefined) {
+      pushUpdate("category", data.category);
+    }
+    if (data.permanentAddress !== undefined) {
+      pushUpdate("permanent_address", data.permanentAddress);
+    }
+    if (data.temporaryAddress !== undefined) {
+      pushUpdate("temporary_address", data.temporaryAddress);
+    }
+    if (data.guardianName !== undefined) {
+      pushUpdate("guardian_name", data.guardianName);
+    }
+    if (data.guardianPhone !== undefined) {
+      pushUpdate("guardian_phone", data.guardianPhone);
+    }
     if (data.pincode !== undefined) {
       pushUpdate("pincode", data.pincode);
     }
@@ -355,8 +370,16 @@ export class EmployeeDirectoryRepository {
         name = $1,
         phone = $2,
         department = $3,
-        status = $4
-      WHERE id = $5::uuid
+        status = $4,
+        permanent_address = $5,
+        temporary_address = $6,
+        bank_name = $7,
+        ifsc_code = $8,
+        account_number = $9,
+        guardian_name = $10,
+        relation = $11,
+        guardian_phone = $12
+      WHERE id = $13::uuid
       RETURNING ${employeeDirectoryDetailSelect}
     `;
 
@@ -365,6 +388,14 @@ export class EmployeeDirectoryRepository {
       data.phone,
       data.department ?? null,
       data.status ?? null,
+      data.permanentAddress ?? null,
+      data.temporaryAddress ?? null,
+      data.bankName ?? null,
+      data.ifscCode ?? null,
+      data.accountNumber ?? null,
+      data.guardianName ?? null,
+      data.relation ?? null,
+      data.guardianPhone ?? null,
       id
     ];
 
@@ -411,11 +442,22 @@ export class EmployeeDirectoryRepository {
           age,
           phone,
           status,
+          aadhar_number,
+          pan_number,
+          permanent_address,
+          temporary_address,
+          bank_name,
+          ifsc_code,
+          account_number,
+          guardian_name,
+          relation,
+          guardian_phone,
           pincode,
+          category,
           created_at
         )
         SELECT
-          $11,
+          $22,
           $1,
           $2,
           $4,
@@ -426,6 +468,17 @@ export class EmployeeDirectoryRepository {
           $8,
           $9,
           $10,
+          $11,
+          $12,
+          $13,
+          $14,
+          $15,
+          $16,
+          $17,
+          $18,
+          $19,
+          $20,
+          $21,
           CURRENT_TIMESTAMP
         FROM next_employee_code
         RETURNING ${employeeDirectoryBaseSelect}
@@ -440,7 +493,18 @@ export class EmployeeDirectoryRepository {
         data.age ?? null,
         data.phone ?? null,
         data.status ?? "Active",
+        data.aadharNumber ?? null,
+        data.panNumber ?? null,
+        data.permanentAddress ?? null,
+        data.temporaryAddress ?? null,
+        data.bankName ?? null,
+        data.ifscCode ?? null,
+        data.accountNumber ?? null,
+        data.guardianName ?? null,
+        data.relation ?? null,
+        data.guardianPhone ?? null,
         data.pincode ?? null,
+        data.category ?? null,
         employeeId
       ]
     );

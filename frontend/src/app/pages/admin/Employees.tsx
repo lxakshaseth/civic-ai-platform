@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { apiRequest } from "@/src/lib/api";
 import { formatDate } from "@/src/lib/presentation";
+import { supabase } from "@/src/lib/supabase";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
@@ -76,6 +77,32 @@ type EmployeeRecord = {
   passwordSecurity?: "missing" | "hashed" | "legacy-plaintext";
 };
 
+type SupabaseEmployeeRow = {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  department?: string | null;
+  employee_code?: string | null;
+  gender?: string | null;
+  age?: number | null;
+  status?: string | null;
+  pincode?: string | null;
+  created_at?: string | null;
+  category?: string | null;
+  permanent_address?: string | null;
+  temporary_address?: string | null;
+  bank_name?: string | null;
+  ifsc_code?: string | null;
+  account_number?: string | number | null;
+  guardian_name?: string | null;
+  relation?: string | null;
+  guardian_phone?: string | number | null;
+  aadhar_number?: string | number | null;
+  pan_number?: string | null;
+  password?: string | null;
+};
+
 type ProfileForm = {
   name: string;
   phone: string;
@@ -117,6 +144,93 @@ type PaginationEntry = number | "left-ellipsis" | "right-ellipsis";
 function normalizeText(value: string) {
   const trimmedValue = value.trim();
   return trimmedValue ? trimmedValue : null;
+}
+
+function nullableString(value: string | number | null | undefined) {
+  if (value == null) {
+    return null;
+  }
+
+  const text = String(value).trim();
+  return text || null;
+}
+
+function mapSupabaseEmployeeRow(row: SupabaseEmployeeRow): EmployeeRecord {
+  const password = nullableString(row.password);
+  const hasPassword = Boolean(password);
+  const passwordSecurity = !hasPassword
+    ? "missing"
+    : password?.startsWith("$2")
+      ? "hashed"
+      : "legacy-plaintext";
+
+  return {
+    id: row.id,
+    name: nullableString(row.name),
+    email: nullableString(row.email),
+    department: nullableString(row.department),
+    employeeCode: nullableString(row.employee_code),
+    gender: nullableString(row.gender),
+    age: row.age ?? null,
+    phone: nullableString(row.phone),
+    status: nullableString(row.status),
+    dateOfBirth: null,
+    aadharNumber: nullableString(row.aadhar_number),
+    panNumber: nullableString(row.pan_number),
+    permanentAddress: nullableString(row.permanent_address),
+    temporaryAddress: nullableString(row.temporary_address),
+    bankName: nullableString(row.bank_name),
+    ifscCode: nullableString(row.ifsc_code),
+    accountNumber: nullableString(row.account_number),
+    guardianName: nullableString(row.guardian_name),
+    relation: nullableString(row.relation),
+    guardianPhone: nullableString(row.guardian_phone),
+    pincode: nullableString(row.pincode),
+    category: nullableString(row.category),
+    createdAt: nullableString(row.created_at),
+    hasPassword,
+    passwordStorage:
+      passwordSecurity === "hashed"
+        ? "Stored securely (hashed)"
+        : passwordSecurity === "legacy-plaintext"
+          ? "Legacy plaintext detected in DB"
+          : "Not set",
+    passwordSecurity,
+  };
+}
+
+function mergeEmployeeRecord(current: EmployeeRecord, next: EmployeeRecord): EmployeeRecord {
+  return {
+    ...current,
+    ...next,
+  };
+}
+
+function employeeMatchesFilters(employee: EmployeeRecord, searchQuery: string, statusFilter: string) {
+  const normalizedStatusFilter = statusFilter.trim().toLowerCase();
+
+  if (
+    normalizedStatusFilter !== "all" &&
+    (employee.status?.trim().toLowerCase() ?? "") !== normalizedStatusFilter
+  ) {
+    return false;
+  }
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  if (!normalizedSearch) {
+    return true;
+  }
+
+  return [
+    employee.id,
+    employee.name,
+    employee.email,
+    employee.phone,
+    employee.employeeCode,
+    employee.department,
+    employee.pincode,
+  ].some((value) => value?.toLowerCase().includes(normalizedSearch));
 }
 
 function isActive(status?: string | null) {
@@ -219,6 +333,8 @@ export default function Employees() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
+  const [profile, setProfile] = useState<EmployeeRecord | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileId, setProfileId] = useState<string | null>(null);
@@ -228,7 +344,7 @@ export default function Employees() {
   const [form, setForm] = useState<ProfileForm>(emptyForm);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
-  const { data, error, loading } = useApiData(
+  const { data: fetchedEmployees, error, loading } = useApiData(
     () =>
       apiRequest<EmployeeRecord[]>("/employees", {
         query: {
@@ -240,7 +356,7 @@ export default function Employees() {
   );
 
   const {
-    data: profile,
+    data: fetchedProfile,
     error: profileError,
     loading: profileLoading,
     refetch: refetchProfile,
@@ -250,16 +366,99 @@ export default function Employees() {
   );
 
   useEffect(() => {
-    if (profile) {
+    if (fetchedEmployees) {
+      setEmployees(fetchedEmployees);
+    }
+  }, [fetchedEmployees]);
+
+  useEffect(() => {
+    if (profileId == null) {
+      setProfile(null);
+      return;
+    }
+
+    if (fetchedProfile) {
+      setProfile(fetchedProfile);
+    }
+  }, [fetchedProfile, profileId]);
+
+  useEffect(() => {
+    if (profile && !isEditing) {
       setForm(toForm(profile));
     }
-  }, [profile]);
+  }, [isEditing, profile]);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [deferredSearchQuery, statusFilter]);
 
-  const employees = data ?? [];
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    const channel = supabase
+      .channel("admin-employees-directory")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "employees" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const deletedId = (payload.old as { id?: string }).id;
+
+            if (!deletedId) {
+              return;
+            }
+
+            setEmployees((currentEmployees) =>
+              currentEmployees.filter((employee) => employee.id !== deletedId)
+            );
+            setProfile((currentProfile) =>
+              currentProfile?.id === deletedId ? null : currentProfile
+            );
+            return;
+          }
+
+          const nextEmployee = mapSupabaseEmployeeRow(payload.new as SupabaseEmployeeRow);
+
+          setEmployees((currentEmployees) => {
+            const existingIndex = currentEmployees.findIndex(
+              (employee) => employee.id === nextEmployee.id
+            );
+            const matchesCurrentFilters = employeeMatchesFilters(
+              nextEmployee,
+              deferredSearchQuery,
+              statusFilter
+            );
+
+            if (!matchesCurrentFilters) {
+              return existingIndex >= 0
+                ? currentEmployees.filter((employee) => employee.id !== nextEmployee.id)
+                : currentEmployees;
+            }
+
+            if (existingIndex >= 0) {
+              return currentEmployees.map((employee, index) =>
+                index === existingIndex ? mergeEmployeeRecord(employee, nextEmployee) : employee
+              );
+            }
+
+            return [nextEmployee, ...currentEmployees];
+          });
+
+          setProfile((currentProfile) =>
+            currentProfile?.id === nextEmployee.id
+              ? mergeEmployeeRecord(currentProfile, nextEmployee)
+              : currentProfile
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [deferredSearchQuery, statusFilter, user?.id]);
 
   const stats = useMemo(() => {
     if (!employees.length) {
@@ -296,6 +495,7 @@ export default function Employees() {
 
   const openProfile = (employeeId: string) => {
     setProfileId(employeeId);
+    setProfile(null);
     setProfileOpen(true);
     setIsEditing(false);
     setShowSensitiveDetails(false);
@@ -393,7 +593,7 @@ export default function Employees() {
     );
   }
 
-  if (error || !data) {
+  if (error || !fetchedEmployees) {
     return (
       <div className="p-8">
         <Alert variant="destructive">
@@ -490,7 +690,7 @@ export default function Employees() {
       </Card>
 
       <Card className="border-gray-200">
-        {data.length === 0 ? (
+        {employees.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">No employees matched the current filters.</div>
         ) : (
           <div>
