@@ -132,8 +132,8 @@ export function toSafeEmployeeDirectoryRecord(
 }
 
 const employeeDirectoryBaseSelect = `
-  id,
-  "fullName" AS name,
+  id::text AS id,
+  name,
   email,
   department,
   employee_code AS "employeeCode",
@@ -141,19 +141,19 @@ const employeeDirectoryBaseSelect = `
   age,
   phone,
   status,
-  date_of_birth::text AS "dateOfBirth",
-  aadhar_number AS "aadharNumber",
-  pan_number AS "panNumber",
-  permanent_address AS "permanentAddress",
-  temporary_address AS "temporaryAddress",
-  bank_name AS "bankName",
-  ifsc_code AS "ifscCode",
-  account_number AS "accountNumber",
-  guardian_name AS "guardianName",
-  relation,
-  guardian_phone AS "guardianPhone",
+  NULL::text AS "dateOfBirth",
+  NULL::text AS "aadharNumber",
+  NULL::text AS "panNumber",
+  NULL::text AS "permanentAddress",
+  NULL::text AS "temporaryAddress",
+  NULL::text AS "bankName",
+  NULL::text AS "ifscCode",
+  NULL::text AS "accountNumber",
+  NULL::text AS "guardianName",
+  NULL::text AS relation,
+  NULL::text AS "guardianPhone",
   pincode,
-  category,
+  NULL::text AS category,
   created_at::text AS "createdAt"
 `;
 
@@ -183,8 +183,8 @@ export class EmployeeDirectoryRepository {
   } = {}) {
     const pool = this.getPool();
 
-    const params: unknown[] = ["employee"];
-    const where: string[] = ["LOWER(COALESCE(role::text, '')) = $1"];
+    const params: unknown[] = [];
+    const where: string[] = [];
 
     if (filters.department?.trim()) {
       params.push(getDepartmentAliases(filters.department));
@@ -203,7 +203,7 @@ export class EmployeeDirectoryRepository {
       where.push(`
         (
           CAST(id AS TEXT) ILIKE $${i}
-          OR COALESCE("fullName", '') ILIKE $${i}
+          OR COALESCE(name, '') ILIKE $${i}
           OR COALESCE(email, '') ILIKE $${i}
           OR COALESCE(phone, '') ILIKE $${i}
           OR COALESCE(employee_code, '') ILIKE $${i}
@@ -214,8 +214,8 @@ export class EmployeeDirectoryRepository {
     const query = `
       SELECT
         ${employeeDirectoryBaseSelect}
-      FROM public.users
-      WHERE ${where.join(" AND ")}
+      FROM public.employees
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       ORDER BY created_at DESC NULLS LAST, id DESC
     `;
 
@@ -237,9 +237,8 @@ export class EmployeeDirectoryRepository {
     const query = `
       SELECT
         ${options.includePassword ? employeeDirectoryDetailSelect : employeeDirectoryBaseSelect}
-      FROM public.users
-      WHERE id = $1
-        AND LOWER(COALESCE(role::text, '')) = 'employee'
+      FROM public.employees
+      WHERE id = $1::uuid
       LIMIT 1
     `;
 
@@ -261,17 +260,16 @@ export class EmployeeDirectoryRepository {
 
     const query = `
       SELECT
-        id,
-        "fullName" AS name,
+        id::text AS id,
+        name,
         email,
         department,
         phone,
         status,
         password,
-        role
-      FROM public.users
+        'EMPLOYEE' AS role
+      FROM public.employees
       WHERE LOWER(COALESCE(email, '')) = LOWER($1)
-        AND LOWER(COALESCE(role::text, '')) = 'employee'
       LIMIT 1
     `;
 
@@ -284,14 +282,10 @@ export class EmployeeDirectoryRepository {
 
     await pool.query(
       `
-        UPDATE public.users
+        UPDATE public.employees
         SET
-          password = $2,
-          "passwordHash" = $2,
-          updated_at = CURRENT_TIMESTAMP,
-          "updatedAt" = CURRENT_TIMESTAMP
-        WHERE id = $1
-          AND LOWER(COALESCE(role::text, '')) = 'employee'
+          password = $2
+        WHERE id = $1::uuid
       `,
       [id, passwordHash]
     );
@@ -309,7 +303,7 @@ export class EmployeeDirectoryRepository {
     };
 
     if (data.name !== undefined) {
-      pushUpdate("\"fullName\"", data.name);
+      pushUpdate("name", data.name);
     }
     if (data.phone !== undefined) {
       pushUpdate("phone", data.phone);
@@ -317,27 +311,11 @@ export class EmployeeDirectoryRepository {
     if (data.department !== undefined) {
       pushUpdate("department", data.department);
     }
-    if (data.category !== undefined) {
-      pushUpdate("category", data.category);
-    }
-    if (data.permanentAddress !== undefined) {
-      pushUpdate("permanent_address", data.permanentAddress);
-    }
-    if (data.temporaryAddress !== undefined) {
-      pushUpdate("temporary_address", data.temporaryAddress);
-    }
-    if (data.guardianName !== undefined) {
-      pushUpdate("guardian_name", data.guardianName);
-    }
-    if (data.guardianPhone !== undefined) {
-      pushUpdate("guardian_phone", data.guardianPhone);
-    }
     if (data.pincode !== undefined) {
       pushUpdate("pincode", data.pincode);
     }
     if (data.passwordHash !== undefined) {
       pushUpdate("password", data.passwordHash);
-      pushUpdate("\"passwordHash\"", data.passwordHash);
     }
 
     if (!updates.length) {
@@ -349,12 +327,9 @@ export class EmployeeDirectoryRepository {
     }
 
     const query = `
-      UPDATE public.users
-      SET ${updates.join(", ")},
-        updated_at = CURRENT_TIMESTAMP,
-        "updatedAt" = CURRENT_TIMESTAMP
-      WHERE id = $1
-        AND LOWER(COALESCE(role::text, '')) = 'employee'
+      UPDATE public.employees
+      SET ${updates.join(", ")}
+      WHERE id = $1::uuid
       RETURNING ${employeeDirectoryBaseSelect}
     `;
 
@@ -375,24 +350,13 @@ export class EmployeeDirectoryRepository {
     const pool = this.getPool();
 
     const query = `
-      UPDATE public.users
+      UPDATE public.employees
       SET
-        "fullName" = $1,
+        name = $1,
         phone = $2,
         department = $3,
-        status = $4,
-        permanent_address = $5,
-        temporary_address = $6,
-        bank_name = $7,
-        ifsc_code = $8,
-        account_number = $9,
-        guardian_name = $10,
-        relation = $11,
-        guardian_phone = $12,
-        updated_at = CURRENT_TIMESTAMP,
-        "updatedAt" = CURRENT_TIMESTAMP
-      WHERE id = $13
-        AND LOWER(COALESCE(role::text, '')) = 'employee'
+        status = $4
+      WHERE id = $5::uuid
       RETURNING ${employeeDirectoryDetailSelect}
     `;
 
@@ -401,14 +365,6 @@ export class EmployeeDirectoryRepository {
       data.phone,
       data.department ?? null,
       data.status ?? null,
-      data.permanentAddress ?? null,
-      data.temporaryAddress ?? null,
-      data.bankName ?? null,
-      data.ifscCode ?? null,
-      data.accountNumber ?? null,
-      data.guardianName ?? null,
-      data.relation ?? null,
-      data.guardianPhone ?? null,
       id
     ];
 
@@ -428,7 +384,6 @@ export class EmployeeDirectoryRepository {
   async createEmployee(data: EmployeeDirectoryCreateInput) {
     const pool = this.getPool();
     const employeeId = uuid();
-    const passwordHash = data.passwordHash ?? `employee-login-disabled-${employeeId}`;
 
     const { rows } = await pool.query<EmployeeDirectoryRecord>(
       `
@@ -443,70 +398,35 @@ export class EmployeeDirectoryRepository {
                 LPAD((COUNT(*) + 1)::text, 4, '0')
               )
             ) AS employee_code
-          FROM public.users
-          WHERE LOWER(COALESCE(role::text, '')) = 'employee'
+          FROM public.employees
         )
-        INSERT INTO public.users (
+        INSERT INTO public.employees (
           id,
-          "fullName",
+          name,
           email,
           password,
-          "passwordHash",
-          role,
           department,
           employee_code,
           gender,
           age,
           phone,
           status,
-          date_of_birth,
-          aadhar_number,
-          pan_number,
-          permanent_address,
-          temporary_address,
-          bank_name,
-          ifsc_code,
-          account_number,
-          guardian_name,
-          relation,
-          guardian_phone,
           pincode,
-          category,
-          "updatedAt",
-          created_at,
-          updated_at,
-          profile_completed
+          created_at
         )
         SELECT
-          $24,
+          $11,
           $1,
           $2,
           $4,
-          $25,
-          'EMPLOYEE'::"UserRole",
           $5,
           next_employee_code.employee_code,
           $6,
           $7,
           $8,
           $9,
-          CASE WHEN $10 IS NULL THEN NULL ELSE $10::date END,
-          $11,
-          $12,
-          $13,
-          $14,
-          $15,
-          $16,
-          $17,
-          $18,
-          $19,
-          $20,
-          $21,
-          $22,
-          CURRENT_TIMESTAMP,
-          CURRENT_TIMESTAMP,
-          CURRENT_TIMESTAMP,
-          COALESCE($23, false)
+          $10,
+          CURRENT_TIMESTAMP
         FROM next_employee_code
         RETURNING ${employeeDirectoryBaseSelect}
       `,
@@ -520,22 +440,8 @@ export class EmployeeDirectoryRepository {
         data.age ?? null,
         data.phone ?? null,
         data.status ?? "Active",
-        data.dateOfBirth ?? null,
-        data.aadharNumber ?? null,
-        data.panNumber ?? null,
-        data.permanentAddress ?? null,
-        data.temporaryAddress ?? null,
-        data.bankName ?? null,
-        data.ifscCode ?? null,
-        data.accountNumber ?? null,
-        data.guardianName ?? null,
-        data.relation ?? null,
-        data.guardianPhone ?? null,
         data.pincode ?? null,
-        data.category ?? null,
-        data.profileCompleted ?? false,
-        employeeId,
-        passwordHash
+        employeeId
       ]
     );
 

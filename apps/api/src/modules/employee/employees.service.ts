@@ -102,8 +102,6 @@ export class EmployeesService {
       search: filters.search
     });
 
-    await this.syncShadowUsers(employees);
-
     return employees;
   }
 

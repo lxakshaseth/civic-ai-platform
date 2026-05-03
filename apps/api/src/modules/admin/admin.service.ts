@@ -84,7 +84,7 @@ export class AdminService {
     const [
       totalUsers,
       totalCitizens,
-      totalEmployees,
+      employeeDirectoryCount,
       totalAdmins,
       totalComplaints,
       resolvedComplaints,
@@ -93,7 +93,9 @@ export class AdminService {
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { role: UserRole.CITIZEN } }),
-      prisma.user.count({ where: { role: UserRole.EMPLOYEE } }),
+      queryCivicPlatform<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM public.employees`
+      ),
       prisma.user.count({
         where: {
           role: {
@@ -126,7 +128,7 @@ export class AdminService {
     return {
       totalUsers,
       totalCitizens,
-      totalEmployees,
+      totalEmployees: Number(employeeDirectoryCount.rows[0]?.count ?? 0),
       totalAdmins,
       totalComplaints,
       resolvedComplaints,
@@ -628,9 +630,8 @@ export class AdminService {
 
     const params: unknown[] = [normalizedPincode];
     const where = [
-      `UPPER(COALESCE(u.role::text, '')) = 'EMPLOYEE'`,
-      `NULLIF(BTRIM(u.pincode), '') = $1`,
-      `LOWER(COALESCE(u.status, 'ACTIVE')) NOT IN ('inactive', 'disabled', 'terminated', 'blocked')`
+      `NULLIF(BTRIM(e.pincode), '') = $1`,
+      `LOWER(COALESCE(e.status, 'ACTIVE')) NOT IN ('inactive', 'disabled', 'terminated', 'blocked')`
     ];
 
     const departmentAliases = getDepartmentAliases(department);
@@ -641,7 +642,7 @@ export class AdminService {
         BTRIM(
           LOWER(
             REGEXP_REPLACE(
-              REPLACE(COALESCE(u.department, ''), '&', ' and '),
+              REPLACE(COALESCE(e.department, ''), '&', ' and '),
               '[^a-zA-Z0-9]+',
               ' ',
               'g'
@@ -654,11 +655,11 @@ export class AdminService {
     const result = await queryCivicPlatform<SuggestedEmployeeRow>(
       `
         SELECT
-          u.id,
-          COALESCE(NULLIF(BTRIM(u."fullName"), ''), SPLIT_PART(COALESCE(u.email, ''), '@', 1), 'Employee') AS name,
-          NULLIF(BTRIM(u.employee_code), '') AS "employeeCode",
-          NULLIF(BTRIM(u.department), '') AS department,
-          NULLIF(BTRIM(u.pincode), '') AS pincode,
+          e.id::text AS id,
+          COALESCE(NULLIF(BTRIM(e.name), ''), SPLIT_PART(COALESCE(e.email, ''), '@', 1), 'Employee') AS name,
+          NULLIF(BTRIM(e.employee_code), '') AS "employeeCode",
+          NULLIF(BTRIM(e.department), '') AS department,
+          NULLIF(BTRIM(e.pincode), '') AS pincode,
           COUNT(DISTINCT CASE
             WHEN UPPER(COALESCE(t.status::text, 'PENDING')) = 'PENDING' THEN t.id
             ELSE NULL
@@ -667,19 +668,19 @@ export class AdminService {
             WHEN UPPER(COALESCE(c.status::text, 'OPEN')) NOT IN ('CLOSED', 'RESOLVED') THEN c.id
             ELSE NULL
           END)::text AS "activeAssignments"
-        FROM public.users u
+        FROM public.employees e
         LEFT JOIN public.complaints c
-          ON COALESCE(c."assignedEmployeeId", c.assigned_employee_id::text) = u.id
+          ON COALESCE(c."assignedEmployeeId", c.assigned_employee_id::text) = e.id::text
         LEFT JOIN public."Ticket" t
           ON t."complaintId" = c.id
         WHERE ${where.join(" AND ")}
         GROUP BY
-          u.id,
-          u."fullName",
-          u.email,
-          u.employee_code,
-          u.department,
-          u.pincode
+          e.id,
+          e.name,
+          e.email,
+          e.employee_code,
+          e.department,
+          e.pincode
         ORDER BY
           COUNT(DISTINCT CASE
             WHEN UPPER(COALESCE(t.status::text, 'PENDING')) = 'PENDING' THEN t.id
@@ -689,7 +690,7 @@ export class AdminService {
             WHEN UPPER(COALESCE(c.status::text, 'OPEN')) NOT IN ('CLOSED', 'RESOLVED') THEN c.id
             ELSE NULL
           END) ASC,
-          COALESCE(NULLIF(BTRIM(u."fullName"), ''), SPLIT_PART(COALESCE(u.email, ''), '@', 1), 'Employee') ASC
+          COALESCE(NULLIF(BTRIM(e.name), ''), SPLIT_PART(COALESCE(e.email, ''), '@', 1), 'Employee') ASC
       `,
       params
     );
