@@ -25,13 +25,13 @@ type UserRecord = {
 
 const userBaseSelect = `
   u.id,
-  COALESCE(NULLIF(BTRIM(u.name), ''), SPLIT_PART(COALESCE(u.email, ''), '@', 1), 'User') AS "fullName",
+  COALESCE(NULLIF(BTRIM(u."fullName"), ''), SPLIT_PART(COALESCE(u.email, ''), '@', 1), 'User') AS "fullName",
   COALESCE(u.email, '') AS email,
   u.phone,
   CASE
-    WHEN UPPER(COALESCE(u.role, '')) = 'SUPER_ADMIN' THEN 'SUPER_ADMIN'
-    WHEN UPPER(COALESCE(u.role, '')) IN ('ADMIN', 'DEPARTMENT_ADMIN') THEN 'DEPARTMENT_ADMIN'
-    WHEN UPPER(COALESCE(u.role, '')) = 'EMPLOYEE' THEN 'EMPLOYEE'
+    WHEN UPPER(COALESCE(u.role::text, '')) = 'SUPER_ADMIN' THEN 'SUPER_ADMIN'
+    WHEN UPPER(COALESCE(u.role::text, '')) IN ('ADMIN', 'DEPARTMENT_ADMIN') THEN 'DEPARTMENT_ADMIN'
+    WHEN UPPER(COALESCE(u.role::text, '')) = 'EMPLOYEE' THEN 'EMPLOYEE'
     ELSE 'CITIZEN'
   END AS role,
   CASE
@@ -129,9 +129,9 @@ export class UsersRepository {
       params.push(filters.role);
       where.push(`
         CASE
-          WHEN UPPER(COALESCE(u.role, '')) = 'SUPER_ADMIN' THEN 'SUPER_ADMIN'
-          WHEN UPPER(COALESCE(u.role, '')) IN ('ADMIN', 'DEPARTMENT_ADMIN') THEN 'DEPARTMENT_ADMIN'
-          WHEN UPPER(COALESCE(u.role, '')) = 'EMPLOYEE' THEN 'EMPLOYEE'
+          WHEN UPPER(COALESCE(u.role::text, '')) = 'SUPER_ADMIN' THEN 'SUPER_ADMIN'
+          WHEN UPPER(COALESCE(u.role::text, '')) IN ('ADMIN', 'DEPARTMENT_ADMIN') THEN 'DEPARTMENT_ADMIN'
+          WHEN UPPER(COALESCE(u.role::text, '')) = 'EMPLOYEE' THEN 'EMPLOYEE'
           ELSE 'CITIZEN'
         END = $${params.length}
       `);
@@ -159,7 +159,7 @@ export class UsersRepository {
       params.push(`%${filters.search.trim()}%`);
       where.push(`
         (
-          COALESCE(u.name, '') ILIKE $${params.length}
+          COALESCE(u."fullName", '') ILIKE $${params.length}
           OR COALESCE(u.email, '') ILIKE $${params.length}
           OR COALESCE(u.phone, '') ILIKE $${params.length}
           OR COALESCE(u.employee_code, '') ILIKE $${params.length}
@@ -323,7 +323,7 @@ export class UsersRepository {
         `
           UPDATE public.users
           SET
-            name = $2,
+            "fullName" = $2,
             phone = $3,
             role = $4,
             department = $5,
@@ -347,7 +347,7 @@ export class UsersRepository {
     const created = await queryCivicPlatform<{ id: string }>(
       `
         INSERT INTO public.users (
-          name,
+          "fullName",
           email,
           phone,
           role,

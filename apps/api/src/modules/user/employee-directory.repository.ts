@@ -132,7 +132,7 @@ export function toSafeEmployeeDirectoryRecord(
 
 const employeeDirectoryBaseSelect = `
   id,
-  name,
+  "fullName" AS name,
   email,
   department,
   employee_code AS "employeeCode",
@@ -183,7 +183,7 @@ export class EmployeeDirectoryRepository {
     const pool = this.getPool();
 
     const params: unknown[] = ["employee"];
-    const where: string[] = ["LOWER(COALESCE(role, '')) = $1"];
+    const where: string[] = ["LOWER(COALESCE(role::text, '')) = $1"];
 
     if (filters.department?.trim()) {
       params.push(getDepartmentAliases(filters.department));
@@ -202,7 +202,7 @@ export class EmployeeDirectoryRepository {
       where.push(`
         (
           CAST(id AS TEXT) ILIKE $${i}
-          OR COALESCE(name, '') ILIKE $${i}
+          OR COALESCE("fullName", '') ILIKE $${i}
           OR COALESCE(email, '') ILIKE $${i}
           OR COALESCE(phone, '') ILIKE $${i}
           OR COALESCE(employee_code, '') ILIKE $${i}
@@ -238,7 +238,7 @@ export class EmployeeDirectoryRepository {
         ${options.includePassword ? employeeDirectoryDetailSelect : employeeDirectoryBaseSelect}
       FROM public.users
       WHERE id = $1
-        AND LOWER(COALESCE(role, '')) = 'employee'
+        AND LOWER(COALESCE(role::text, '')) = 'employee'
       LIMIT 1
     `;
 
@@ -270,7 +270,7 @@ export class EmployeeDirectoryRepository {
         role
       FROM public.users
       WHERE LOWER(COALESCE(email, '')) = LOWER($1)
-        AND LOWER(COALESCE(role, '')) = 'employee'
+        AND LOWER(COALESCE(role::text, '')) = 'employee'
       LIMIT 1
     `;
 
@@ -287,7 +287,7 @@ export class EmployeeDirectoryRepository {
         SET
           password = $2
         WHERE id = $1
-          AND LOWER(COALESCE(role, '')) = 'employee'
+          AND LOWER(COALESCE(role::text, '')) = 'employee'
       `,
       [id, passwordHash]
     );
@@ -305,7 +305,7 @@ export class EmployeeDirectoryRepository {
     };
 
     if (data.name !== undefined) {
-      pushUpdate("name", data.name);
+      pushUpdate("\"fullName\"", data.name);
     }
     if (data.phone !== undefined) {
       pushUpdate("phone", data.phone);
@@ -347,7 +347,7 @@ export class EmployeeDirectoryRepository {
       UPDATE public.users
       SET ${updates.join(", ")}
       WHERE id = $1
-        AND LOWER(COALESCE(role, '')) = 'employee'
+        AND LOWER(COALESCE(role::text, '')) = 'employee'
       RETURNING ${employeeDirectoryBaseSelect}
     `;
 
@@ -370,7 +370,7 @@ export class EmployeeDirectoryRepository {
     const query = `
       UPDATE public.users
       SET
-        name = $1,
+        "fullName" = $1,
         phone = $2,
         department = $3,
         status = $4,
@@ -383,7 +383,7 @@ export class EmployeeDirectoryRepository {
         relation = $11,
         guardian_phone = $12
       WHERE id = $13
-        AND LOWER(COALESCE(role, '')) = 'employee'
+        AND LOWER(COALESCE(role::text, '')) = 'employee'
       RETURNING ${employeeDirectoryDetailSelect}
     `;
 
@@ -435,7 +435,7 @@ export class EmployeeDirectoryRepository {
           FROM public.users
         )
         INSERT INTO public.users (
-          name,
+          "fullName",
           email,
           password,
           role,
