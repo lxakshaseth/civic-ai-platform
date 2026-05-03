@@ -569,11 +569,11 @@ export class EmployeePortalService {
     }>(
       `
         SELECT
-          complaint_id AS "complaintId",
+          "complaintId" AS "complaintId",
           COUNT(*)::text AS count
-        FROM public.tickets
-        WHERE complaint_id = ANY($1::uuid[])
-        GROUP BY complaint_id
+        FROM public."Ticket"
+        WHERE "complaintId" = ANY($1::text[])
+        GROUP BY "complaintId"
       `,
       [complaintIds]
     );

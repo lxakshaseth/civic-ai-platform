@@ -255,7 +255,7 @@ export class AdminService {
       where.push(`
         (
           LOWER(COALESCE(r.citizen_name, '')) LIKE $${params.length}
-          OR LOWER(COALESCE(u.name, '')) LIKE $${params.length}
+          OR LOWER(COALESCE(u."fullName", '')) LIKE $${params.length}
           OR LOWER(COALESCE(r.upi_id, '')) LIKE $${params.length}
           OR LOWER(COALESCE(r.transaction_id, '')) LIKE $${params.length}
           OR LOWER(COALESCE(r.invoice_number, '')) LIKE $${params.length}
@@ -272,7 +272,7 @@ export class AdminService {
           r.citizen_id AS "citizenId",
           COALESCE(
             NULLIF(BTRIM(r.citizen_name), ''),
-            NULLIF(BTRIM(u.name), ''),
+            NULLIF(BTRIM(u."fullName"), ''),
             SPLIT_PART(COALESCE(u.email, ''), '@', 1),
             'Citizen'
           ) AS "citizenName",
@@ -519,12 +519,12 @@ export class AdminService {
           c.title,
           c.category,
           c.pincode,
-          c.created_at::text AS "createdAt",
+          COALESCE(c.created_at, c."createdAt")::text AS "createdAt",
           c.department,
           c.status
         FROM public.complaints c
-        WHERE c.assigned_employee_id IS NULL
-        ORDER BY c.created_at DESC NULLS LAST, c.id DESC
+        WHERE COALESCE(c."assignedEmployeeId", c.assigned_employee_id::text) IS NULL
+        ORDER BY COALESCE(c.created_at, c."createdAt") DESC NULLS LAST, c.id DESC
       `
     );
 
@@ -628,7 +628,7 @@ export class AdminService {
 
     const params: unknown[] = [normalizedPincode];
     const where = [
-      `UPPER(COALESCE(u.role, '')) = 'EMPLOYEE'`,
+      `UPPER(COALESCE(u.role::text, '')) = 'EMPLOYEE'`,
       `NULLIF(BTRIM(u.pincode), '') = $1`,
       `LOWER(COALESCE(u.status, 'ACTIVE')) NOT IN ('inactive', 'disabled', 'terminated', 'blocked')`
     ];
@@ -655,41 +655,41 @@ export class AdminService {
       `
         SELECT
           u.id,
-          COALESCE(NULLIF(BTRIM(u.name), ''), SPLIT_PART(COALESCE(u.email, ''), '@', 1), 'Employee') AS name,
+          COALESCE(NULLIF(BTRIM(u."fullName"), ''), SPLIT_PART(COALESCE(u.email, ''), '@', 1), 'Employee') AS name,
           NULLIF(BTRIM(u.employee_code), '') AS "employeeCode",
           NULLIF(BTRIM(u.department), '') AS department,
           NULLIF(BTRIM(u.pincode), '') AS pincode,
           COUNT(DISTINCT CASE
-            WHEN UPPER(COALESCE(t.status, 'PENDING')) = 'PENDING' THEN t.id
+            WHEN UPPER(COALESCE(t.status::text, 'PENDING')) = 'PENDING' THEN t.id
             ELSE NULL
           END)::text AS "currentWorkload",
           COUNT(DISTINCT CASE
-            WHEN UPPER(COALESCE(c.status, 'OPEN')) NOT IN ('CLOSED', 'RESOLVED') THEN c.id
+            WHEN UPPER(COALESCE(c.status::text, 'OPEN')) NOT IN ('CLOSED', 'RESOLVED') THEN c.id
             ELSE NULL
           END)::text AS "activeAssignments"
         FROM public.users u
         LEFT JOIN public.complaints c
-          ON c.assigned_employee_id = u.id
-        LEFT JOIN public.tickets t
-          ON t.complaint_id = c.id
+          ON COALESCE(c."assignedEmployeeId", c.assigned_employee_id::text) = u.id
+        LEFT JOIN public."Ticket" t
+          ON t."complaintId" = c.id
         WHERE ${where.join(" AND ")}
         GROUP BY
           u.id,
-          u.name,
+          u."fullName",
           u.email,
           u.employee_code,
           u.department,
           u.pincode
         ORDER BY
           COUNT(DISTINCT CASE
-            WHEN UPPER(COALESCE(t.status, 'PENDING')) = 'PENDING' THEN t.id
+            WHEN UPPER(COALESCE(t.status::text, 'PENDING')) = 'PENDING' THEN t.id
             ELSE NULL
           END) ASC,
           COUNT(DISTINCT CASE
-            WHEN UPPER(COALESCE(c.status, 'OPEN')) NOT IN ('CLOSED', 'RESOLVED') THEN c.id
+            WHEN UPPER(COALESCE(c.status::text, 'OPEN')) NOT IN ('CLOSED', 'RESOLVED') THEN c.id
             ELSE NULL
           END) ASC,
-          COALESCE(NULLIF(BTRIM(u.name), ''), SPLIT_PART(COALESCE(u.email, ''), '@', 1), 'Employee') ASC
+          COALESCE(NULLIF(BTRIM(u."fullName"), ''), SPLIT_PART(COALESCE(u.email, ''), '@', 1), 'Employee') ASC
       `,
       params
     );

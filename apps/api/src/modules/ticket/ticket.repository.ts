@@ -154,30 +154,30 @@ const mapUser = (
 
 const ticketBaseSelect = `
   t.id,
-  t.complaint_id AS "complaintId",
+  t."complaintId" AS "complaintId",
   t.message,
-  t.status,
-  t.created_at::text AS "createdAt",
+  t.status::text AS status,
+  t."createdAt"::text AS "createdAt",
   raised_by.id AS "raisedById",
-  raised_by.name AS "raisedByFullName",
-  raised_by.role AS "raisedByRole",
-  raised_by.department AS "raisedByDepartmentId",
+  raised_by."fullName" AS "raisedByFullName",
+  raised_by.role::text AS "raisedByRole",
+  COALESCE(raised_by."departmentId", raised_by.department) AS "raisedByDepartmentId",
   c.id AS "complaintEntityId",
   c.title AS "complaintTitle",
-  c.status AS "complaintStatus",
-  c.location_address AS "complaintLocationAddress",
+  c.status::text AS "complaintStatus",
+  COALESCE(c."locationAddress", c.location_address) AS "complaintLocationAddress",
   c.pincode AS "complaintPincode",
-  c.department AS "complaintDepartmentId",
-  c.citizen_id AS "complaintCitizenId",
-  c.assigned_employee_id AS "complaintAssignedEmployeeId",
+  COALESCE(c."departmentId", c.department) AS "complaintDepartmentId",
+  COALESCE(c."citizenId", c.citizen_id::text) AS "complaintCitizenId",
+  COALESCE(c."assignedEmployeeId", c.assigned_employee_id::text) AS "complaintAssignedEmployeeId",
   citizen.id AS "citizenId",
-  citizen.name AS "citizenFullName",
-  citizen.role AS "citizenRole",
-  citizen.department AS "citizenDepartmentId",
+  citizen."fullName" AS "citizenFullName",
+  citizen.role::text AS "citizenRole",
+  COALESCE(citizen."departmentId", citizen.department) AS "citizenDepartmentId",
   employee.id AS "assignedEmployeeId",
-  employee.name AS "assignedEmployeeFullName",
-  employee.role AS "assignedEmployeeRole",
-  employee.department AS "assignedEmployeeDepartmentId"
+  employee."fullName" AS "assignedEmployeeFullName",
+  employee.role::text AS "assignedEmployeeRole",
+  COALESCE(employee."departmentId", employee.department) AS "assignedEmployeeDepartmentId"
 `;
 
 function mapTicketRow(row: TicketRow): TicketRecord {
@@ -229,16 +229,15 @@ export class TicketsRepository {
     const ticketId = uuid();
     const result = await queryCivicPlatform<{ id: string }>(
       `
-        INSERT INTO public.tickets (
+        INSERT INTO public."Ticket" (
           id,
-          complaint_id,
-          raised_by,
+          "complaintId",
+          "raisedById",
           message,
           status,
-          created_at,
-          updated_at
+          "createdAt"
         )
-        VALUES ($1, $2, $3, $4, 'PENDING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, $4, 'PENDING'::"TicketStatus", CURRENT_TIMESTAMP)
         RETURNING id
       `,
       [ticketId, data.complaintId, data.raisedById, data.message.trim()]
@@ -251,17 +250,17 @@ export class TicketsRepository {
     const result = await queryCivicPlatform<TicketRow>(
       `
         SELECT ${ticketBaseSelect}
-        FROM public.tickets t
+        FROM public."Ticket" t
         INNER JOIN public.complaints c
-          ON c.id = t.complaint_id
+          ON c.id = t."complaintId"
         INNER JOIN public.users raised_by
-          ON raised_by.id = t.raised_by
+          ON raised_by.id = t."raisedById"
         LEFT JOIN public.users citizen
-          ON citizen.id = c.citizen_id
+          ON citizen.id = COALESCE(c."citizenId", c.citizen_id::text)
         LEFT JOIN public.users employee
-          ON employee.id = c.assigned_employee_id
-        WHERE t.complaint_id = $1
-        ORDER BY t.created_at DESC NULLS LAST, t.id DESC
+          ON employee.id = COALESCE(c."assignedEmployeeId", c.assigned_employee_id::text)
+        WHERE t."complaintId" = $1
+        ORDER BY t."createdAt" DESC NULLS LAST, t.id DESC
       `,
       [complaintId]
     );
@@ -275,23 +274,23 @@ export class TicketsRepository {
 
     if (filters?.status) {
       params.push(filters.status);
-      where.push(`UPPER(COALESCE(t.status, 'PENDING')) = $${params.length}`);
+      where.push(`UPPER(COALESCE(t.status::text, 'PENDING')) = $${params.length}`);
     }
 
     const result = await queryCivicPlatform<TicketRow>(
       `
         SELECT ${ticketBaseSelect}
-        FROM public.tickets t
+        FROM public."Ticket" t
         INNER JOIN public.complaints c
-          ON c.id = t.complaint_id
+          ON c.id = t."complaintId"
         INNER JOIN public.users raised_by
-          ON raised_by.id = t.raised_by
+          ON raised_by.id = t."raisedById"
         LEFT JOIN public.users citizen
-          ON citizen.id = c.citizen_id
+          ON citizen.id = COALESCE(c."citizenId", c.citizen_id::text)
         LEFT JOIN public.users employee
-          ON employee.id = c.assigned_employee_id
+          ON employee.id = COALESCE(c."assignedEmployeeId", c.assigned_employee_id::text)
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY t.created_at DESC NULLS LAST, t.id DESC
+        ORDER BY t."createdAt" DESC NULLS LAST, t.id DESC
       `,
       params
     );
@@ -303,15 +302,15 @@ export class TicketsRepository {
     const result = await queryCivicPlatform<TicketRow>(
       `
         SELECT ${ticketBaseSelect}
-        FROM public.tickets t
+        FROM public."Ticket" t
         INNER JOIN public.complaints c
-          ON c.id = t.complaint_id
+          ON c.id = t."complaintId"
         INNER JOIN public.users raised_by
-          ON raised_by.id = t.raised_by
+          ON raised_by.id = t."raisedById"
         LEFT JOIN public.users citizen
-          ON citizen.id = c.citizen_id
+          ON citizen.id = COALESCE(c."citizenId", c.citizen_id::text)
         LEFT JOIN public.users employee
-          ON employee.id = c.assigned_employee_id
+          ON employee.id = COALESCE(c."assignedEmployeeId", c.assigned_employee_id::text)
         WHERE t.id = $1
         LIMIT 1
       `,
@@ -324,10 +323,9 @@ export class TicketsRepository {
   async updateStatus(id: string, status: TicketStatus) {
     const result = await queryCivicPlatform<{ id: string }>(
       `
-        UPDATE public.tickets
+        UPDATE public."Ticket"
         SET
-          status = $2,
-          updated_at = CURRENT_TIMESTAMP
+          status = $2::"TicketStatus"
         WHERE id = $1
         RETURNING id
       `,
@@ -345,23 +343,23 @@ export class TicketsRepository {
           c.title,
           c.status,
           c.pincode,
-          c.location_address AS "locationAddress",
-          c.citizen_id AS "citizenId",
-          c.assigned_employee_id AS "assignedEmployeeId",
-          c.department AS "departmentId",
-          citizen.name AS "citizenName",
-          citizen.role AS "citizenRole",
-          citizen.department AS "citizenDepartmentId",
+          COALESCE(c."locationAddress", c.location_address) AS "locationAddress",
+          COALESCE(c."citizenId", c.citizen_id::text) AS "citizenId",
+          COALESCE(c."assignedEmployeeId", c.assigned_employee_id::text) AS "assignedEmployeeId",
+          COALESCE(c."departmentId", c.department) AS "departmentId",
+          citizen."fullName" AS "citizenName",
+          citizen.role::text AS "citizenRole",
+          COALESCE(citizen."departmentId", citizen.department) AS "citizenDepartmentId",
           citizen.email AS "citizenEmail",
-          employee.name AS "assignedEmployeeName",
-          employee.role AS "assignedEmployeeRole",
-          employee.department AS "assignedEmployeeDepartmentId",
+          employee."fullName" AS "assignedEmployeeName",
+          employee.role::text AS "assignedEmployeeRole",
+          COALESCE(employee."departmentId", employee.department) AS "assignedEmployeeDepartmentId",
           employee.email AS "assignedEmployeeEmail"
         FROM public.complaints c
         LEFT JOIN public.users citizen
-          ON citizen.id = c.citizen_id
+          ON citizen.id = COALESCE(c."citizenId", c.citizen_id::text)
         LEFT JOIN public.users employee
-          ON employee.id = c.assigned_employee_id
+          ON employee.id = COALESCE(c."assignedEmployeeId", c.assigned_employee_id::text)
         WHERE c.id = $1
         LIMIT 1
       `,
@@ -408,10 +406,10 @@ export class TicketsRepository {
     const result = await queryCivicPlatform<{ count: string }>(
       `
         SELECT COUNT(*)::text AS count
-        FROM public.tickets
-        WHERE complaint_id = $1
-          AND raised_by = $2
-          AND UPPER(COALESCE(status, 'PENDING')) = 'PENDING'
+        FROM public."Ticket"
+        WHERE "complaintId" = $1
+          AND "raisedById" = $2
+          AND UPPER(COALESCE(status::text, 'PENDING')) = 'PENDING'
       `,
       [complaintId, userId]
     );
@@ -425,28 +423,39 @@ export class TicketsRepository {
     triggeredBy: string;
     reason: string;
   }) {
-    return withCivicPlatformTransaction(async (client) => {
-      const escalationId = uuid();
+    try {
+      return await withCivicPlatformTransaction(async (client) => {
+        const escalationId = uuid();
 
-      await client.query(
-        `
-          INSERT INTO public.escalations (
-            id,
-            complaint_id,
-            ticket_id,
-            triggered_by,
-            reason,
-            escalation_level,
-            status,
-            created_at
-          )
-          VALUES ($1, $2, $3, $4, $5, 1, 'OPEN', CURRENT_TIMESTAMP)
-        `,
-        [escalationId, data.complaintId, data.ticketId, data.triggeredBy, data.reason.trim()]
-      );
+        await client.query(
+          `
+            INSERT INTO public.escalations (
+              id,
+              complaint_id,
+              ticket_id,
+              triggered_by,
+              reason,
+              escalation_level,
+              status,
+              created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, 1, 'OPEN', CURRENT_TIMESTAMP)
+          `,
+          [escalationId, data.complaintId, data.ticketId, data.triggeredBy, data.reason.trim()]
+        );
 
-      return escalationId;
-    });
+        return escalationId;
+      });
+    } catch (error) {
+      const errorCode =
+        typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+
+      if (errorCode === "42P01") {
+        return null;
+      }
+
+      throw error;
+    }
   }
 
   async listAdminRecipients(departmentId?: string | null) {
@@ -454,7 +463,7 @@ export class TicketsRepository {
       `
         SELECT id
         FROM public.users
-        WHERE UPPER(COALESCE(role, '')) IN ('DEPARTMENT_ADMIN', 'SUPER_ADMIN')
+        WHERE UPPER(COALESCE(role::text, '')) IN ('DEPARTMENT_ADMIN', 'SUPER_ADMIN')
           AND (
             $1::text IS NULL
             OR COALESCE(department, '') = ''

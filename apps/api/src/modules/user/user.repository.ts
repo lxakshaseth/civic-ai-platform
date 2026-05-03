@@ -1,4 +1,5 @@
 import { UserRole } from "@prisma/client";
+import { v4 as uuid } from "uuid";
 
 import { queryCivicPlatform } from "database/clients/civic-platform";
 
@@ -41,7 +42,7 @@ const userBaseSelect = `
   END AS "isActive",
   CAST(d.id AS TEXT) AS "departmentId",
   d.name AS "departmentName",
-  u.created_at::text AS "createdAt"
+  COALESCE(u.created_at, u."createdAt")::text AS "createdAt"
 `;
 
 function normalizeRole(role: string | UserRole | undefined | null): UserRole {
@@ -100,7 +101,7 @@ export class UsersRepository {
           CAST(id AS TEXT) AS id,
           name,
           NULL::text AS description
-        FROM public.departments
+        FROM public."Department"
         WHERE NULLIF(BTRIM(name), '') IS NOT NULL
         UNION
         SELECT DISTINCT
@@ -181,8 +182,9 @@ export class UsersRepository {
       `
         SELECT ${userBaseSelect}
         FROM public.users u
-        LEFT JOIN public.departments d
-          ON LOWER(COALESCE(d.name, '')) = LOWER(COALESCE(u.department, ''))
+        LEFT JOIN public."Department" d
+          ON CAST(d.id AS TEXT) = COALESCE(u."departmentId", '')
+          OR LOWER(COALESCE(d.name, '')) = LOWER(COALESCE(u.department, ''))
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
         ORDER BY u.created_at DESC NULLS LAST, u.email ASC
       `,
@@ -207,8 +209,9 @@ export class UsersRepository {
       `
         SELECT ${userBaseSelect}
         FROM public.users u
-        LEFT JOIN public.departments d
-          ON LOWER(COALESCE(d.name, '')) = LOWER(COALESCE(u.department, ''))
+        LEFT JOIN public."Department" d
+          ON CAST(d.id AS TEXT) = COALESCE(u."departmentId", '')
+          OR LOWER(COALESCE(d.name, '')) = LOWER(COALESCE(u.department, ''))
         WHERE u.id = $1
         LIMIT 1
       `,
@@ -233,8 +236,9 @@ export class UsersRepository {
       `
         SELECT ${userBaseSelect}
         FROM public.users u
-        LEFT JOIN public.departments d
-          ON LOWER(COALESCE(d.name, '')) = LOWER(COALESCE(u.department, ''))
+        LEFT JOIN public."Department" d
+          ON CAST(d.id AS TEXT) = COALESCE(u."departmentId", '')
+          OR LOWER(COALESCE(d.name, '')) = LOWER(COALESCE(u.department, ''))
         WHERE LOWER(COALESCE(u.email, '')) = LOWER($1)
         LIMIT 1
       `,
@@ -248,7 +252,7 @@ export class UsersRepository {
   ) {
     const departmentName = data.departmentId
       ? await queryCivicPlatform<{ name: string }>(
-          `SELECT name FROM public.departments WHERE CAST(id AS TEXT) = $1 LIMIT 1`,
+          `SELECT name FROM public."Department" WHERE CAST(id AS TEXT) = $1 LIMIT 1`,
           [data.departmentId]
         ).then((result) => result.rows[0]?.name ?? null)
       : null;
@@ -257,19 +261,20 @@ export class UsersRepository {
       `
         UPDATE public.users
         SET
-          role = $2,
+          role = $2::"UserRole",
           department = $3,
           status = CASE
             WHEN $4::boolean IS NULL THEN status
             WHEN $4::boolean = true THEN 'ACTIVE'
             ELSE 'INACTIVE'
           END,
-          updated_at = CURRENT_TIMESTAMP
+          updated_at = CURRENT_TIMESTAMP,
+          "updatedAt" = CURRENT_TIMESTAMP
         WHERE id = $1
       `,
       [
         id,
-        data.role === UserRole.DEPARTMENT_ADMIN ? "ADMIN" : data.role,
+        data.role,
         departmentName,
         data.isActive ?? null
       ]
@@ -300,21 +305,21 @@ export class UsersRepository {
     isActive?: boolean;
   }) {
     const normalizedEmail = data.email.trim().toLowerCase();
-    const normalizedRole = data.role === UserRole.DEPARTMENT_ADMIN ? "ADMIN" : data.role;
+    const normalizedRole = data.role;
     const existing = await this.findByEmail(normalizedEmail);
 
     if (data.departmentName?.trim()) {
       await queryCivicPlatform(
         `
-          INSERT INTO public.departments (name)
-          SELECT $1
+          INSERT INTO public."Department" (id, name, "updatedAt")
+          SELECT $2, $1, CURRENT_TIMESTAMP
           WHERE NOT EXISTS (
             SELECT 1
-            FROM public.departments
+            FROM public."Department"
             WHERE LOWER(COALESCE(name, '')) = LOWER($1)
           )
         `,
-        [data.departmentName.trim()]
+        [data.departmentName.trim(), uuid()]
       );
     }
 
@@ -325,10 +330,11 @@ export class UsersRepository {
           SET
             "fullName" = $2,
             phone = $3,
-            role = $4,
+            role = $4::"UserRole",
             department = $5,
             status = CASE WHEN $6::boolean THEN 'ACTIVE' ELSE 'INACTIVE' END,
-            updated_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP,
+            "updatedAt" = CURRENT_TIMESTAMP
           WHERE id = $1
         `,
         [
@@ -347,24 +353,29 @@ export class UsersRepository {
     const created = await queryCivicPlatform<{ id: string }>(
       `
         INSERT INTO public.users (
+          id,
           "fullName",
           email,
           phone,
+          "passwordHash",
           role,
           department,
           status,
           language,
+          "updatedAt",
           created_at,
           updated_at,
           profile_completed
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'en', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, false)
+        VALUES ($1, $2, $3, $4, $5, $6::"UserRole", $7, $8, 'en', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, false)
         RETURNING id
       `,
       [
+        uuid(),
         data.fullName.trim(),
         normalizedEmail,
         data.phone?.trim() || null,
+        `shadow-login-disabled-${uuid()}`,
         normalizedRole,
         data.departmentName?.trim() || null,
         data.isActive ?? true ? "ACTIVE" : "INACTIVE"

@@ -1,4 +1,5 @@
 import { StatusCodes } from "http-status-codes";
+import { v4 as uuid } from "uuid";
 
 import { employeeDirectoryPool } from "database/clients/employee-directory";
 import { AppError } from "shared/errors/app-error";
@@ -261,7 +262,7 @@ export class EmployeeDirectoryRepository {
     const query = `
       SELECT
         id,
-        name,
+        "fullName" AS name,
         email,
         department,
         phone,
@@ -285,7 +286,10 @@ export class EmployeeDirectoryRepository {
       `
         UPDATE public.users
         SET
-          password = $2
+          password = $2,
+          "passwordHash" = $2,
+          updated_at = CURRENT_TIMESTAMP,
+          "updatedAt" = CURRENT_TIMESTAMP
         WHERE id = $1
           AND LOWER(COALESCE(role::text, '')) = 'employee'
       `,
@@ -333,6 +337,7 @@ export class EmployeeDirectoryRepository {
     }
     if (data.passwordHash !== undefined) {
       pushUpdate("password", data.passwordHash);
+      pushUpdate("\"passwordHash\"", data.passwordHash);
     }
 
     if (!updates.length) {
@@ -345,7 +350,9 @@ export class EmployeeDirectoryRepository {
 
     const query = `
       UPDATE public.users
-      SET ${updates.join(", ")}
+      SET ${updates.join(", ")},
+        updated_at = CURRENT_TIMESTAMP,
+        "updatedAt" = CURRENT_TIMESTAMP
       WHERE id = $1
         AND LOWER(COALESCE(role::text, '')) = 'employee'
       RETURNING ${employeeDirectoryBaseSelect}
@@ -381,7 +388,9 @@ export class EmployeeDirectoryRepository {
         account_number = $9,
         guardian_name = $10,
         relation = $11,
-        guardian_phone = $12
+        guardian_phone = $12,
+        updated_at = CURRENT_TIMESTAMP,
+        "updatedAt" = CURRENT_TIMESTAMP
       WHERE id = $13
         AND LOWER(COALESCE(role::text, '')) = 'employee'
       RETURNING ${employeeDirectoryDetailSelect}
@@ -418,6 +427,8 @@ export class EmployeeDirectoryRepository {
 
   async createEmployee(data: EmployeeDirectoryCreateInput) {
     const pool = this.getPool();
+    const employeeId = uuid();
+    const passwordHash = data.passwordHash ?? `employee-login-disabled-${employeeId}`;
 
     const { rows } = await pool.query<EmployeeDirectoryRecord>(
       `
@@ -429,15 +440,18 @@ export class EmployeeDirectoryRepository {
                 'EMP-',
                 TO_CHAR(CURRENT_DATE, 'YYYY'),
                 '-',
-                LPAD((COALESCE(MAX(id), 0) + 1)::text, 4, '0')
+                LPAD((COUNT(*) + 1)::text, 4, '0')
               )
             ) AS employee_code
           FROM public.users
+          WHERE LOWER(COALESCE(role::text, '')) = 'employee'
         )
         INSERT INTO public.users (
+          id,
           "fullName",
           email,
           password,
+          "passwordHash",
           role,
           department,
           employee_code,
@@ -458,14 +472,18 @@ export class EmployeeDirectoryRepository {
           guardian_phone,
           pincode,
           category,
+          "updatedAt",
           created_at,
+          updated_at,
           profile_completed
         )
         SELECT
+          $24,
           $1,
           $2,
           $4,
-          'EMPLOYEE',
+          $25,
+          'EMPLOYEE'::"UserRole",
           $5,
           next_employee_code.employee_code,
           $6,
@@ -485,6 +503,8 @@ export class EmployeeDirectoryRepository {
           $20,
           $21,
           $22,
+          CURRENT_TIMESTAMP,
+          CURRENT_TIMESTAMP,
           CURRENT_TIMESTAMP,
           COALESCE($23, false)
         FROM next_employee_code
@@ -513,7 +533,9 @@ export class EmployeeDirectoryRepository {
         data.guardianPhone ?? null,
         data.pincode ?? null,
         data.category ?? null,
-        data.profileCompleted ?? false
+        data.profileCompleted ?? false,
+        employeeId,
+        passwordHash
       ]
     );
 
